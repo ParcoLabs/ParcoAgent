@@ -1,7 +1,7 @@
 // client/src/components/analytics/VendorPerformance.tsx
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useVendorPerformance } from "@/lib/analytics.hooks";
+import { useVendorPerformance } from "@/lib/analytics.hook";
 import type { AnalyticsFilters } from "@/types/analytics";
 import {
   ResponsiveContainer,

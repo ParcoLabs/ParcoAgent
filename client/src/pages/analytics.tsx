@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 import Sidebar from "@/components/dashboard/sidebar";
 import FiltersBar from "@/components/analytics/FiltersBar";
-import KpiStrip from "@/components/analytics/KpiStrip";
+import KPIStrip from "@/components/analytics/KPIStrip";
 import TrendCard from "@/components/analytics/TrendCard";
 import SpendByCategory from "@/components/analytics/SpendByCategory";
 import BacklogAging from "@/components/analytics/BacklogAging";
@@ -64,7 +64,7 @@ export default function AnalyticsPage() {
           <FiltersBar filters={filters} onChange={setFilters} />
 
           {/* KPI strip */}
-          <KpiStrip filters={filters} />
+          <KPIStrip filters={filters} />
 
           {/* Grid */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">

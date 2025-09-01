@@ -1,7 +1,7 @@
 // client/src/components/analytics/SpendByCategory.tsx
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useSpendByCategory } from "@/lib/analytics.hooks";
+import { useSpendByCategory } from "@/lib/analytics.hook";
 import type { AnalyticsFilters } from "@/types/analytics";
 import {
   ResponsiveContainer,

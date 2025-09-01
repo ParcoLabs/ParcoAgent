@@ -2,7 +2,7 @@
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useInsights } from "@/lib/analytics.hooks";
+import { useInsights } from "@/lib/analytics.hook";
 import type { AnalyticsFilters } from "@/types/analytics";
 
 export default function AIInsights({ filters }: { filters: AnalyticsFilters }) {

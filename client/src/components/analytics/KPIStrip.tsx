@@ -1,7 +1,7 @@
 // client/src/components/analytics/KpiStrip.tsx
 import * as React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { useKPIs } from "@/lib/analytics.hooks";
+import { useKPIs } from "@/lib/analytics.hook";
 import type { AnalyticsFilters } from "@/types/analytics";
 
 function Kpi({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
