@@ -8,7 +8,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
 import Settings from "@/pages/settings"; // 👈 settings route
-import Requests from "@/pages/requests"; // 👈 NEW: requests route
+import Requests from "@/pages/requests"; // 👈 requests route
+import Properties from "@/pages/properties"; // 👈 NEW: properties route
+import Analytics from "@/pages/analytics";
 
 const queryClient = new QueryClient();
 
@@ -24,8 +26,15 @@ function Router() {
       {/* Settings */}
       <Route path="/settings" component={Settings} />
 
-      {/* NEW: Requests */}
+      {/* Requests */}
       <Route path="/requests" component={Requests} />
+
+      {/* Properties */}
+      <Route path="/properties" component={Properties} />
+
+      {/* Analytics */}
+      <Route path="/analytics" component={Analytics} />
+      
 
       {/* Fallback (keep as last) */}
       <Route component={NotFound} />
