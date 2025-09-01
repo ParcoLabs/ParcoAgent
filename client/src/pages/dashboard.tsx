@@ -21,24 +21,26 @@ export default function Dashboard() {
   const notificationCount = notifications?.length || 3;
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar />
+    <div className="flex h-screen bg-gray-50 md:flex-row flex-col">
+      <div className="md:block hidden">
+        <Sidebar />
+      </div>
       
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+        <header className="bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-semibold text-gray-900">Property Management Dashboard</h2>
-              <p className="text-gray-600">Today, {new Date().toLocaleDateString('en-US', { 
+              <h2 className="text-xl md:text-2xl font-semibold text-gray-900">Property Management Dashboard</h2>
+              <p className="text-sm md:text-base text-gray-600 hidden sm:block">Today, {new Date().toLocaleDateString('en-US', { 
                 weekday: 'long', 
                 year: 'numeric', 
                 month: 'long', 
                 day: 'numeric' 
               })}</p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 md:space-x-4">
               <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-5 h-5" />
                 {notificationCount > 0 && (
@@ -47,21 +49,21 @@ export default function Dashboard() {
                   </span>
                 )}
               </button>
-              <Button className="bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center space-x-2">
+              <Button className="bg-green-700 text-white hover:bg-green-800 transition-colors flex items-center space-x-2">
                 <Plus className="w-4 h-4" />
-                <span>New Request</span>
+                <span className="hidden sm:inline">New Request</span>
               </Button>
             </div>
           </div>
         </header>
 
         {/* Main Dashboard Content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <StatsCards />
           
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mt-6 md:mt-8">
             {/* Recent Requests & AI Suggestions */}
-            <div className="xl:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-4 md:space-y-6">
               <NewRequestForm onSuggestion={setAiSuggestion} />
               
               {aiSuggestion && <AISuggestion suggestion={aiSuggestion} />}
@@ -70,7 +72,7 @@ export default function Dashboard() {
             </div>
 
             {/* Sidebar Widgets */}
-            <div className="space-y-6">
+            <div className="space-y-4 md:space-y-6">
               <SLAAlerts />
               <CategoryChart />
               <TopVendors />

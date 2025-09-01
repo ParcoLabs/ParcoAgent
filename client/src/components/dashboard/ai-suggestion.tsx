@@ -87,7 +87,7 @@ export default function AISuggestion({ suggestion }: AISuggestionProps) {
     <Card className="border border-gray-100">
       <CardHeader className="border-b border-gray-200">
         <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
-          <Brain className="w-5 h-5 text-blue-600 mr-2" />
+          <Brain className="w-5 h-5 text-green-700 mr-2" />
           AI Analysis & Recommendations
         </CardTitle>
       </CardHeader>
@@ -95,7 +95,7 @@ export default function AISuggestion({ suggestion }: AISuggestionProps) {
         <div className="space-y-6">
           {/* Classification Tags */}
           <div className="flex flex-wrap gap-3">
-            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
               {getCategoryIcon(suggestion.category)}
               <span className="ml-1 capitalize">{suggestion.category}</span>
             </Badge>
@@ -118,11 +118,11 @@ export default function AISuggestion({ suggestion }: AISuggestionProps) {
           {/* Vendor Recommendation */}
           <div className="border border-gray-200 rounded-lg p-4">
             <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-              <Bus className="w-4 h-4 text-blue-600 mr-2" />
+              <Bus className="w-4 h-4 text-green-700 mr-2" />
               Recommended Vendor
             </h4>
             <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-green-700 rounded-lg flex items-center justify-center">
                 <Wrench className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1">
@@ -156,7 +156,7 @@ export default function AISuggestion({ suggestion }: AISuggestionProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="border border-gray-200 rounded-lg p-4">
               <h4 className="font-medium text-gray-900 mb-2 flex items-center">
-                <Mail className="w-4 h-4 text-blue-600 mr-2" />
+                <Mail className="w-4 h-4 text-green-700 mr-2" />
                 Vendor Message
               </h4>
               <div className="bg-gray-50 rounded p-3 text-sm text-gray-700 mb-2">
@@ -165,7 +165,7 @@ export default function AISuggestion({ suggestion }: AISuggestionProps) {
               <Button 
                 onClick={() => handleEditMessage("vendor")}
                 variant="ghost" 
-                className="text-blue-600 hover:text-blue-700 text-sm p-0 h-auto"
+                className="text-green-700 hover:text-green-800 text-sm p-0 h-auto"
               >
                 <Edit className="w-3 h-3 mr-1" />
                 Edit & Send
@@ -173,7 +173,7 @@ export default function AISuggestion({ suggestion }: AISuggestionProps) {
             </div>
             <div className="border border-gray-200 rounded-lg p-4">
               <h4 className="font-medium text-gray-900 mb-2 flex items-center">
-                <Home className="w-4 h-4 text-blue-600 mr-2" />
+                <Home className="w-4 h-4 text-green-700 mr-2" />
                 Tenant Update
               </h4>
               <div className="bg-gray-50 rounded p-3 text-sm text-gray-700 mb-2">
@@ -182,7 +182,7 @@ export default function AISuggestion({ suggestion }: AISuggestionProps) {
               <Button 
                 onClick={() => handleEditMessage("tenant")}
                 variant="ghost" 
-                className="text-blue-600 hover:text-blue-700 text-sm p-0 h-auto"
+                className="text-green-700 hover:text-green-800 text-sm p-0 h-auto"
               >
                 <Edit className="w-3 h-3 mr-1" />
                 Edit & Send

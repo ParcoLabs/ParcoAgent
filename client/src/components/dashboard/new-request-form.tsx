@@ -78,7 +78,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
     <Card className="border border-gray-100">
       <CardHeader className="border-b border-gray-200">
         <CardTitle className="flex items-center text-lg font-semibold text-gray-900">
-          <PlusCircle className="w-5 h-5 text-blue-600 mr-2" />
+          <PlusCircle className="w-5 h-5 text-green-700 mr-2" />
           Submit New Property Issue
         </CardTitle>
       </CardHeader>
@@ -96,7 +96,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
                       <Input 
                         placeholder="Enter property address" 
                         {...field}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-colors"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-700 focus:border-green-700 transition-colors"
                       />
                     </FormControl>
                   </FormItem>
@@ -112,7 +112,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
                       <Input 
                         placeholder="e.g., 4B" 
                         {...field}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-colors"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-700 focus:border-green-700 transition-colors"
                       />
                     </FormControl>
                   </FormItem>
@@ -131,7 +131,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
                       rows={4}
                       placeholder="Describe the property issue in detail..."
                       {...field}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-colors"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-700 focus:border-green-700 transition-colors"
                     />
                   </FormControl>
                 </FormItem>
@@ -174,7 +174,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
               <Button 
                 type="submit" 
                 disabled={isLoading}
-                className="bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                className="bg-green-700 text-white hover:bg-green-800 transition-colors flex items-center space-x-2"
               >
                 <Sparkles className="w-4 h-4" />
                 <span>{isLoading ? "Analyzing..." : "Get AI Suggestion"}</span>

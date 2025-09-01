@@ -86,7 +86,7 @@ export default function RequestsTable() {
       <CardHeader className="border-b border-gray-200">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold text-gray-900">Recent Requests</CardTitle>
-          <Button variant="ghost" className="text-blue-600 hover:text-blue-700 text-sm">
+          <Button variant="ghost" className="text-green-700 hover:text-green-800 text-sm">
             View All
           </Button>
         </div>
@@ -96,22 +96,22 @@ export default function RequestsTable() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Property
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
                   Issue
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Priority
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
                   SLA
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -119,31 +119,37 @@ export default function RequestsTable() {
             <tbody className="bg-white divide-y divide-gray-200">
               {requests?.map((request: any) => (
                 <tr key={request.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 md:px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{request.propertyAddress}</div>
                     {request.unitNumber && (
                       <div className="text-sm text-gray-500">Unit {request.unitNumber}</div>
                     )}
+                    <div className="text-sm text-gray-900 sm:hidden mt-1">{request.description}</div>
+                    <div className="text-sm text-gray-500 flex items-center mt-1 sm:hidden">
+                      {getCategoryIcon(request.category)}
+                      <span className="ml-1 capitalize">{request.category}</span>
+                    </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 md:px-6 py-4 hidden sm:table-cell">
                     <div className="text-sm text-gray-900">{request.description}</div>
                     <div className="text-sm text-gray-500 flex items-center mt-1">
                       {getCategoryIcon(request.category)}
                       <span className="ml-1 capitalize">{request.category}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 md:px-6 py-4 whitespace-nowrap">
                     {getPriorityBadge(request.priority)}
+                    <div className="lg:hidden mt-1">{getStatusBadge(request.status)}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 md:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
                     {getStatusBadge(request.status)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 md:px-6 py-4 whitespace-nowrap text-sm text-gray-900 hidden md:table-cell">
                     {formatSLATime(request.slaHoursLeft)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
-                      <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700">
+                  <td className="px-3 md:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex space-x-1 md:space-x-2">
+                      <Button variant="ghost" size="sm" className="text-green-700 hover:text-green-800">
                         <Eye className="w-4 h-4" />
                       </Button>
                       <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-900">

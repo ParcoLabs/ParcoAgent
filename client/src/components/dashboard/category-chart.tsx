@@ -26,9 +26,9 @@ export default function CategoryChart() {
   const getColorClasses = (category: string) => {
     switch (category.toLowerCase()) {
       case "plumbing":
-        return { bg: "bg-blue-500", text: "text-blue-500" };
+        return { bg: "bg-green-600", text: "text-green-600" };
       case "hvac":
-        return { bg: "bg-blue-400", text: "text-blue-400" };
+        return { bg: "bg-green-500", text: "text-green-500" };
       case "electrical":
         return { bg: "bg-yellow-500", text: "text-yellow-500" };
       case "locks":

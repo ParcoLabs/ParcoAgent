@@ -41,9 +41,9 @@ export default function TopVendors() {
   const getTradeColor = (trade: string) => {
     switch (trade.toLowerCase()) {
       case "plumbing":
-        return "bg-blue-600";
+        return "bg-green-700";
       case "hvac":
-        return "bg-blue-400";
+        return "bg-green-600";
       case "electrical":
         return "bg-yellow-500";
       default:
@@ -73,13 +73,13 @@ export default function TopVendors() {
                 <span>{vendor.jobsCompleted} jobs completed</span>
               </div>
             </div>
-            <Button variant="ghost" className="text-xs text-blue-600 hover:text-blue-700 p-0 h-auto">
+            <Button variant="ghost" className="text-xs text-green-700 hover:text-green-800 p-0 h-auto">
               Contact
             </Button>
           </div>
         ))}
         <div className="pt-2 border-t border-gray-200">
-          <Button variant="ghost" className="text-sm text-blue-600 hover:text-blue-700 w-full">
+          <Button variant="ghost" className="text-sm text-green-700 hover:text-green-800 w-full">
             View All Vendors <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
         </div>

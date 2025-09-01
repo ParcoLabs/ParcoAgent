@@ -42,21 +42,19 @@
   --radius: 1.3rem;
   
   /* Parco-specific colors */
-  --parco-primary: hsl(210.7 82.9% 43.1%);
+  --parco-primary: hsl(171.8 100% 19.0%); /* #056052 */
   --parco-secondary: hsl(0 0% 26.3%);
   --parco-accent: hsl(25.7 95% 53.1%);
   --parco-success: hsl(122.4 39.4% 49.2%);
   --parco-warning: hsl(45.4 93.4% 47.5%);
   --parco-error: hsl(5.8 86.3% 57.8%);
   --parco-gray-50: hsl(210 40% 98%);
-  --parco-blue-50: hsl(214 100% 97%);
-  --parco-blue-100: hsl(214 95% 93%);
+  --parco-green-50: hsl(171 100% 96%);
+  --parco-green-100: hsl(171 95% 90%);
   --parco-red-50: hsl(0 86% 97%);
   --parco-red-100: hsl(0 93% 94%);
   --parco-yellow-50: hsl(55 92% 95%);
   --parco-yellow-100: hsl(55 91% 91%);
-  --parco-green-50: hsl(138 76% 97%);
-  --parco-green-100: hsl(141 84% 93%);
 }
 
 .dark {
@@ -104,16 +102,16 @@
   border-color: var(--parco-primary);
 }
 
-.parco-bg-blue-50 {
-  background-color: var(--parco-blue-50);
+.parco-bg-green-50 {
+  background-color: var(--parco-green-50);
 }
 
-.parco-bg-blue-100 {
-  background-color: var(--parco-blue-100);
+.parco-bg-green-100 {
+  background-color: var(--parco-green-100);
 }
 
-.parco-text-blue-800 {
-  color: hsl(213 91% 33%);
+.parco-text-green-800 {
+  color: hsl(171 100% 15%);
 }
 
 .parco-bg-red-50 {
@@ -162,4 +160,15 @@
 
 .parco-error {
   background-color: var(--parco-error);
+}
+/* Settings page helpers */
+.input {
+  @apply w-full rounded-xl border px-3 py-2 bg-white text-gray-900 placeholder-gray-400
+         focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500;
+}
+.btn-primary {
+  @apply px-4 py-2 rounded-xl bg-black text-white hover:bg-gray-900 transition;
+}
+.btn-outline {
+  @apply px-4 py-2 rounded-xl border hover:bg-gray-50 transition;
 }

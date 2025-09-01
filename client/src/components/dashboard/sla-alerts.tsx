@@ -58,7 +58,7 @@ export default function SLAAlerts() {
               <p className="text-sm text-gray-600">
                 SLA expires in {alert.hoursLeft} hours
               </p>
-              <Button variant="ghost" className="text-xs text-blue-600 hover:text-blue-700 mt-1 p-0 h-auto">
+              <Button variant="ghost" className="text-xs text-green-700 hover:text-green-800 mt-1 p-0 h-auto">
                 View Details <ArrowRight className="w-3 h-3 ml-1" />
               </Button>
             </div>

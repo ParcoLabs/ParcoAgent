@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
-import { Building, BarChart3, ClipboardList, Users, Home, User } from "lucide-react";
+import { BarChart3, ClipboardList, Users, Home, User, Settings as SettingsIcon } from "lucide-react"; // 👈 added Settings icon
 import { cn } from "@/lib/utils";
+import ParcoLogo from "@/assets/parco-logo.png"; // <-- match exact name & extension
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: BarChart3, current: true },
@@ -14,41 +15,48 @@ export default function Sidebar() {
   const [location] = useLocation();
 
   return (
-    <div className="bg-white shadow-sm border-r border-gray-200 w-64 flex flex-col">
-      <div className="p-6 border-b border-gray-200">
+    <div className="bg-white shadow-sm border-r border-gray-200 w-64 flex flex-col md:relative fixed inset-y-0 left-0 z-50 md:translate-x-0 transform -translate-x-full transition-transform duration-300">
+      <div className="p-4 md:p-6 border-b border-gray-200">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Building className="w-6 h-6 text-white" />
+          {/* Green tile with Parco logo inside */}
+          <div className="w-8 md:w-10 h-8 md:h-10 bg-green-700 rounded-lg flex items-center justify-center overflow-hidden">
+            <img
+              src={ParcoLogo}
+              alt="Parco Logo"
+              className="max-w-full max-h-full object-contain"
+            />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">Parco PM</h1>
-            <p className="text-sm text-gray-500">Agent Dashboard</p>
+            <h1 className="text-lg md:text-xl font-semibold text-gray-900">Parco PM</h1>
+            <p className="text-xs md:text-sm text-gray-500">Agent Dashboard</p>
           </div>
         </div>
       </div>
-      
+
       <nav className="flex-1 p-4 space-y-2">
         {navigation.map((item) => {
-          const isActive = location === item.href || (item.href === "/" && location === "/dashboard");
+          const isActive =
+            location === item.href || (item.href === "/" && location === "/dashboard");
           return (
             <Link key={item.name} href={item.href}>
-              <a
+              <div
                 className={cn(
-                  "flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors",
+                  "flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors cursor-pointer",
                   isActive
-                    ? "bg-blue-50 text-blue-600 border-r-2 border-blue-600 font-medium"
+                    ? "bg-green-50 text-green-700 border-r-2 border-green-700 font-medium"
                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                 )}
               >
                 <item.icon className="w-5 h-5" />
                 <span>{item.name}</span>
-              </a>
+              </div>
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-4 border-t border-gray-200">
+      <div className="p-4 border-t border-gray-200 space-y-2">
+        {/* User card */}
         <div className="flex items-center space-x-3 px-4 py-3">
           <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
             <User className="w-4 h-4 text-gray-600" />
@@ -58,6 +66,21 @@ export default function Sidebar() {
             <p className="text-xs text-gray-500">Property Manager</p>
           </div>
         </div>
+
+        {/* Settings button 👇 */}
+        <Link href="/settings">
+          <div
+            className={cn(
+              "flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors cursor-pointer",
+              location === "/settings"
+                ? "bg-green-50 text-green-700 border-r-2 border-green-700 font-medium"
+                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+            )}
+          >
+            <SettingsIcon className="w-5 h-5" />
+            <span>Settings</span>
+          </div>
+        </Link>
       </div>
     </div>
   );
