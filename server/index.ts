@@ -1,7 +1,9 @@
 // server/index.ts
 import express from "express";
 import cors from "cors";
+import { createServer } from "http";
 import routes from "./routes";
+import { setupVite } from "./vite";
 
 const app = express();
 
@@ -19,8 +21,13 @@ app.use(express.json({ limit: "5mb" }));
 app.use("/api", routes);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;
-app.listen(PORT, () => {
-  console.log(`[express] serving on port ${PORT}`);
+const server = createServer(app);
+
+// Setup Vite to serve the frontend
+setupVite(app, server).then(() => {
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`[express] serving on port ${PORT}`);
+  });
 });
 
 export default app;

@@ -24,6 +24,40 @@ router.use((req, res, next) => {
 // Health
 router.get("/healthz", (_req, res) => res.json({ ok: true }));
 
+// Dashboard stats endpoint
+router.get("/dashboard/stats", (_req, res) => {
+  res.json({
+    activeRequests: 12,
+    urgentIssues: 3,
+    slaCompliance: 94,
+    avgResolutionDays: 2.1
+  });
+});
+
+// Notifications endpoint
+router.get("/notifications", (_req, res) => {
+  res.json([
+    {
+      id: 1,
+      message: "New maintenance request for Unit 12A",
+      type: "urgent",
+      timestamp: new Date().toISOString()
+    },
+    {
+      id: 2,
+      message: "SLA compliance threshold reached",
+      type: "warning",
+      timestamp: new Date().toISOString()
+    },
+    {
+      id: 3,
+      message: "Monthly report available",
+      type: "info",
+      timestamp: new Date().toISOString()
+    }
+  ]);
+});
+
 // Settings - read
 router.get("/settings", (_req, res) => {
   res.json(getSettings());

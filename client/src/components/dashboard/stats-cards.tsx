@@ -24,7 +24,7 @@ export default function StatsCards() {
   const statCards = [
     {
       title: "Active Requests",
-      value: stats?.activeRequests || 0,
+      value: (stats as any)?.activeRequests || 0,
       icon: ClipboardList,
       iconBg: "bg-blue-100",
       iconColor: "text-blue-600",
@@ -33,7 +33,7 @@ export default function StatsCards() {
     },
     {
       title: "Urgent Issues",
-      value: stats?.urgentIssues || 0,
+      value: (stats as any)?.urgentIssues || 0,
       icon: AlertTriangle,
       iconBg: "bg-red-100",
       iconColor: "text-red-600",
@@ -42,7 +42,7 @@ export default function StatsCards() {
     },
     {
       title: "SLA Compliance",
-      value: `${stats?.slaCompliance || 0}%`,
+      value: `${(stats as any)?.slaCompliance || 0}%`,
       icon: Clock,
       iconBg: "bg-green-100",
       iconColor: "text-green-600",
@@ -51,7 +51,7 @@ export default function StatsCards() {
     },
     {
       title: "Avg Resolution",
-      value: `${stats?.avgResolutionDays || 0}d`,
+      value: `${(stats as any)?.avgResolutionDays || 0}d`,
       icon: Timer,
       iconBg: "bg-yellow-100",
       iconColor: "text-yellow-600",

@@ -18,7 +18,7 @@ export default function Dashboard() {
     queryKey: ["/api/notifications"],
   });
 
-  const notificationCount = notifications?.length || 3;
+  const notificationCount = Array.isArray(notifications) ? notifications.length : 3;
 
   return (
     <div className="flex h-screen bg-gray-50 md:flex-row flex-col">
