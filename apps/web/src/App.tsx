@@ -10,6 +10,7 @@ import NotFound from "@/pages/not-found";
 import Settings from "@/pages/settings"; // 👈 settings route
 import Requests from "@/pages/requests"; // 👈 requests route
 import Properties from "@/pages/properties"; // 👈 NEW: properties route
+import Vendors from "@/pages/vendors"; 
 import Analytics from "@/pages/analytics";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,9 @@ function Router() {
 
       {/* Properties */}
       <Route path="/properties" component={Properties} />
+
+      {/* Vendors */}
+      <Route path="/vendors" component={Vendors} />
 
       {/* Analytics */}
       <Route path="/analytics" component={Analytics} />
