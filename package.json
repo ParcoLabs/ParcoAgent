@@ -25,6 +25,14 @@
   "dependencies": {
     "@replit/vite-plugin-cartographer": "^0.3.0",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
-    "http-proxy-middleware": "^3.0.5"
+    "@tailwindcss/typography": "^0.5.16",
+    "@vitejs/plugin-react": "^5.0.2",
+    "cors": "^2.8.5",
+    "drizzle-kit": "^0.31.4",
+    "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5",
+    "tailwindcss": "^4.1.12",
+    "tailwindcss-animate": "^1.0.7",
+    "vite": "^7.1.4"
   }
 }
