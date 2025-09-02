@@ -11,8 +11,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": "/apps/web/src",
-      "@shared": "/packages/shared/src"
+      "@": "./src",
+      "@shared": "../../packages/shared/src"
     }
   }
 });
