@@ -4,13 +4,14 @@ const express = require('express');
 
 const app = express();
 
-// Proxy API requests to the backend
+// Proxy API requests to the backend (must come first)
 app.use('/api', createProxyMiddleware({
   target: 'http://localhost:4000',
-  changeOrigin: true
+  changeOrigin: true,
+  logLevel: 'info'
 }));
 
-// Proxy everything else to Vite
+// Proxy everything else to Vite (must come last)
 app.use('/', createProxyMiddleware({
   target: 'http://localhost:5173',
   changeOrigin: true,
