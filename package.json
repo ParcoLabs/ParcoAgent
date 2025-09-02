@@ -1,7 +1,10 @@
 {
   "name": "parco",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm-run-all -p dev:web dev:api",
     "dev:web": "npm --workspace apps/web run dev",
@@ -18,5 +21,10 @@
   "devDependencies": {
     "npm-run-all": "^4.1.5",
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@replit/vite-plugin-cartographer": "^0.3.0",
+    "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
+    "http-proxy-middleware": "^3.0.5"
   }
 }
