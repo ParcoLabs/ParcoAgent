@@ -37,7 +37,7 @@ export default function SLAAlerts() {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-6 space-y-4">
-        {alerts?.map((alert: any) => (
+        {Array.isArray(alerts) && alerts.map((alert: any) => (
           <div
             key={alert.id}
             className={`flex items-start space-x-3 p-3 border rounded-lg ${
@@ -64,7 +64,7 @@ export default function SLAAlerts() {
             </div>
           </div>
         ))}
-        {(!alerts || alerts.length === 0) && (
+        {(!Array.isArray(alerts) || alerts.length === 0) && (
           <div className="text-center text-gray-500 py-4">
             <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
             <p className="text-sm">No SLA alerts at this time</p>

@@ -47,7 +47,7 @@ export default function CategoryChart() {
       </CardHeader>
       <CardContent className="p-6">
         <div className="space-y-4">
-          {categories?.map((category: any) => {
+          {Array.isArray(categories) && categories.map((category: any) => {
             const colors = getColorClasses(category.category);
             return (
               <div key={category.category} className="flex items-center justify-between">

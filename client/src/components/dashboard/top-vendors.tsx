@@ -57,7 +57,7 @@ export default function TopVendors() {
         <CardTitle className="text-lg font-semibold text-gray-900">Top Vendors</CardTitle>
       </CardHeader>
       <CardContent className="p-6 space-y-4">
-        {vendors?.map((vendor: any) => (
+        {Array.isArray(vendors) && vendors.map((vendor: any) => (
           <div key={vendor.id} className="flex items-center space-x-3">
             <div className={`w-10 h-10 ${getTradeColor(vendor.trade)} rounded-lg flex items-center justify-center`}>
               {getTradeIcon(vendor.trade)}
