@@ -1,9 +1,9 @@
 // client/src/App.tsx
 import { Switch, Route } from "wouter";
-import { QueryClient } from "@tanstack/react-query";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { queryFn } from "@/lib/api";
 
 import Dashboard from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
@@ -11,8 +11,18 @@ import Settings from "@/pages/settings"; // 👈 settings route
 import Requests from "@/pages/requests"; // 👈 requests route
 import Properties from "@/pages/properties"; // 👈 NEW: properties route
 import Analytics from "@/pages/analytics";
+import Vendors from "@/pages/vendors";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      queryFn,                 // ✅ global fetcher
+      staleTime: 30_000,       // cache items for 30s
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 function Router() {
   return (
@@ -34,7 +44,9 @@ function Router() {
 
       {/* Analytics */}
       <Route path="/analytics" component={Analytics} />
-      
+
+      {/* Vendors */}
+      <Route path="/vendors" component={Vendors} />
 
       {/* Fallback (keep as last) */}
       <Route component={NotFound} />
