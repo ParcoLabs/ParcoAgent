@@ -1,6 +1,8 @@
 // server/storage.ts
 
-// Types
+// ─────────────────────────────────────────────────────────────────────────────
+// Types you already had
+// ─────────────────────────────────────────────────────────────────────────────
 export type Settings = {
   profile: {
     company?: string | null;
@@ -52,11 +54,45 @@ export type Settings = {
   }>;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Agent types (assistive mode)
+// ─────────────────────────────────────────────────────────────────────────────
+export type AgentDraft = {
+  id: string;
+  requestId: string;
+  kind: "tenant_reply" | "vendor_outreach";
+  channel: "email" | "sms";
+  to: string;
+  subject?: string | null;
+  body: string;
+  vendorId?: string | null;
+  status: "draft" | "sent";
+  metadata?: Record<string, any>;
+  createdAt: string; // ISO timestamp
+};
+
+export type AgentRun = {
+  id: string;
+  requestId: string;
+  status: "success" | "error";
+  model?: string | null;
+  tokensIn?: number | null;
+  tokensOut?: number | null;
+  error?: string | null;
+  createdAt: string; // ISO timestamp
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
+const nowIso = () => new Date().toISOString();
 
-// In-memory store (swap to DB later)
+// ─────────────────────────────────────────────────────────────────────────────
+/** In-memory store (swap to DB later) */
+// ─────────────────────────────────────────────────────────────────────────────
 const store: Settings = {
   profile: { company: null, phone: null, timezone: null, smsNotifications: false },
   property: { name: null, address: null, type: null, unitCount: null, rentCycle: "Monthly" },
@@ -67,7 +103,13 @@ const store: Settings = {
   tenants: [],
 };
 
-// Accessors
+// NEW: in-memory “tables” for the agent
+const agentDraftsStore: AgentDraft[] = [];
+const agentRunsStore: AgentRun[] = [];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Accessors you already had
+// ─────────────────────────────────────────────────────────────────────────────
 export function getSettings(): Settings {
   return store;
 }
@@ -112,3 +154,64 @@ export function importTenants(rows: Array<Omit<Settings["tenants"][number], "id"
   });
   return { inserted, errors };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Agent helpers (used by /api/agent/* routes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Add a single draft
+export function addAgentDraft(
+  d: Omit<AgentDraft, "id" | "createdAt" | "status"> & { status?: AgentDraft["status"] }
+): AgentDraft {
+  const draft: AgentDraft = {
+    id: uid(),
+    createdAt: nowIso(),
+    status: d.status ?? "draft",
+    ...d,
+  };
+  agentDraftsStore.push(draft);
+  return draft;
+}
+
+// Add multiple drafts at once
+export function addAgentDrafts(
+  requestId: string,
+  drafts: Array<
+    Omit<AgentDraft, "id" | "createdAt" | "status" | "requestId"> & {
+      status?: AgentDraft["status"];
+    }
+  >
+): AgentDraft[] {
+  const created = drafts.map((d) =>
+    addAgentDraft({
+      requestId,
+      ...d,
+      status: d.status ?? "draft",
+    })
+  );
+  return created;
+}
+
+// List drafts for a request
+export function listAgentDrafts(requestId: string): AgentDraft[] {
+  return agentDraftsStore.filter((d) => d.requestId === requestId);
+}
+
+// Mark a draft as sent
+export function markAgentDraftSent(id: string): boolean {
+  const i = agentDraftsStore.findIndex((d) => d.id === id);
+  if (i === -1) return false;
+  agentDraftsStore[i] = { ...agentDraftsStore[i], status: "sent" };
+  return true;
+}
+
+// Record an agent run (for audit)
+export function addAgentRun(run: Omit<AgentRun, "id" | "createdAt">): AgentRun {
+  const row: AgentRun = { id: uid(), createdAt: nowIso(), ...run };
+  agentRunsStore.push(row);
+  return row;
+}
+
+// (Optional) expose stores for debugging/dev tools
+export const __agentDraftsStore = agentDraftsStore;
+export const __agentRunsStore = agentRunsStore;

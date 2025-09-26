@@ -10,6 +10,18 @@ import { Phone, Mail, MessageSquare, Wrench } from "lucide-react";
 import AIComposerModal from "./AIComposerModal";
 import AssignVendorModal from "./AssignVendorModal";
 
+// ─── NEW: local type for agent drafts ─────────────────────────────────────────
+type Draft = {
+  id: string;
+  createdAt: string;
+  status: "draft" | "sent";
+  kind: "tenant_reply" | "vendor_outreach";
+  channel: "email" | "sms";
+  to: string;
+  subject?: string | null;
+  body: string;
+};
+
 export default function RequestDetailsPane({
   selected,
 }: {
@@ -21,6 +33,46 @@ export default function RequestDetailsPane({
     "tenant" | "vendor" | "owner"
   >("tenant");
   const [assignOpen, setAssignOpen] = React.useState(false);
+
+  // ─── NEW: agent drafts state ────────────────────────────────────────────────
+  const [drafts, setDrafts] = React.useState<Draft[]>([]);
+  const [draftsLoading, setDraftsLoading] = React.useState(false);
+  const requestId = selected?.id;
+
+  async function loadDrafts() {
+    if (!requestId) return;
+    setDraftsLoading(true);
+    try {
+      const res = await fetch(`/api/agent/drafts?requestId=${requestId}`);
+      const json = await res.json();
+      setDrafts(json?.drafts ?? []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDraftsLoading(false);
+    }
+  }
+
+  async function runAgent() {
+    if (!requestId) return;
+    await fetch(`/api/agent/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId }),
+    });
+    await loadDrafts();
+  }
+
+  async function approveDraft(id: string) {
+    await fetch(`/api/agent/drafts/${id}/approve`, { method: "POST" });
+    await loadDrafts();
+  }
+
+  React.useEffect(() => {
+    // load drafts whenever the selected request changes
+    loadDrafts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId]);
 
   if (!selected) {
     return (
@@ -105,6 +157,57 @@ export default function RequestDetailsPane({
               </li>
             ))}
           </ul>
+        </CardContent>
+      </Card>
+
+      {/* ─── NEW: AI Agent Drafts panel ─────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>AI Agent Drafts</span>
+            <Button size="sm" onClick={runAgent}>
+              Run Agent
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {draftsLoading ? (
+            <div className="text-sm text-muted-foreground">Loading drafts…</div>
+          ) : drafts.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              No drafts yet. Click <span className="font-medium">Run Agent</span>.
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {drafts.map((d) => (
+                <li key={d.id} className="p-3 border rounded bg-white shadow-sm text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">
+                        {d.kind === "tenant_reply" ? "Tenant Reply" : "Vendor Outreach"}
+                      </Badge>
+                      <Badge variant="outline">{d.channel}</Badge>
+                    </div>
+                    <Badge
+                      variant={d.status === "sent" ? "default" : "secondary"}
+                      className={d.status === "sent" ? "bg-green-600 text-white" : ""}
+                    >
+                      {d.status}
+                    </Badge>
+                  </div>
+                  {d.subject && <div className="mt-1 font-medium">{d.subject}</div>}
+                  <div className="mt-1 whitespace-pre-wrap text-muted-foreground">{d.body}</div>
+                  {d.status === "draft" && (
+                    <div className="mt-2">
+                      <Button size="sm" onClick={() => approveDraft(d.id)}>
+                        Approve &amp; Send
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 
