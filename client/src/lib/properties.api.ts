@@ -1,9 +1,18 @@
 // client/src/lib/properties.api.ts
-import type { PropertyDetail, PropertyRow, PropertyStatus, PropertyType } from "@/types/properties";
+import type {
+  PropertyDetail,
+  PropertyRow,
+  PropertyStatus,
+  PropertyType,
+} from "@/types/properties";
+import { get, post } from "./api";
+import { Property as PropertySchema, type TProperty } from "../../../shared/contracts";
 
+// Toggle this when the real backend endpoints are ready.
 const USE_MOCKS = true;
 
-// ---- MOCK DATA ----
+/* -------------------- MOCK DATA -------------------- */
+
 const mockRows: PropertyRow[] = [
   {
     id: "p-225-pine",
@@ -104,6 +113,8 @@ const mockDetails: Record<string, PropertyDetail> = {
   },
 };
 
+/* -------------------- TYPES -------------------- */
+
 export type ListParams = {
   search?: string;
   type?: PropertyType | "All";
@@ -113,50 +124,138 @@ export type ListParams = {
   capRate?: string; // e.g., ">=6"
 };
 
-export async function fetchProperties(params: ListParams = {}): Promise<{ rows: PropertyRow[]; total: number }> {
-  if (!USE_MOCKS) {
-    // const res = await fetch(`/api/properties?` + new URLSearchParams(params as any));
-    // return res.json();
-  }
-  let rows = [...mockRows];
+/* -------------------- PUBLIC API -------------------- */
 
-  const { search, type, status, city } = params;
-  if (search) {
-    const q = search.toLowerCase();
-    rows = rows.filter(r => `${r.name} ${r.address} ${r.city} ${r.state}`.toLowerCase().includes(q));
+export async function fetchProperties(
+  params: ListParams = {}
+): Promise<{ rows: PropertyRow[]; total: number }> {
+  if (USE_MOCKS) {
+    // Local filtering over mock rows
+    let rows = [...mockRows];
+
+    const search = (params.search ?? "").trim().toLowerCase();
+    const type = params.type ?? "All";
+    const status = params.status ?? "All";
+    const city = params.city ?? "All";
+
+    if (search) {
+      rows = rows.filter((r) =>
+        `${r.name} ${r.address} ${r.city} ${r.state}`.toLowerCase().includes(search)
+      );
+    }
+    if (type !== "All") rows = rows.filter((r) => r.type === type);
+    if (status !== "All") rows = rows.filter((r) => r.status === status);
+    if (city !== "All") rows = rows.filter(
+      (r) => r.city.toLowerCase() === String(city).toLowerCase()
+    );
+
+    return { rows, total: rows.length };
   }
-  if (type && type !== "All") rows = rows.filter(r => r.type === type);
-  if (status && status !== "All") rows = rows.filter(r => r.status === status);
-  if (city && city !== "All") rows = rows.filter(r => r.city.toLowerCase() === String(city).toLowerCase());
-  return { rows, total: rows.length };
+
+  // ---- REAL API PATH (when USE_MOCKS = false) ----
+  // Get minimal property list from backend and map into your UI's PropertyRow.
+  // Backend schema is validated with Zod (shared/contracts).
+  const props = await get<TProperty[]>("/properties", PropertySchema.array());
+
+  // Map minimal backend fields to your richer UI row shape.
+  // If your backend later returns these extra fields, extend the mapper.
+  const rows: PropertyRow[] = props.map((p) => ({
+    id: p.id,
+    name: p.name,
+    address: p.address || "",
+    city: "", // TODO: fill when backend provides
+    state: "", // TODO: fill when backend provides
+    type: "Multifamily" as PropertyType, // default until backend provides real type
+    status: "Active" as PropertyStatus,  // default until backend provides real status
+    unitsTotal: 0,
+    occupancyPct: 0,
+    ttmNOI: 0,
+  }));
+
+  // Client-side filtering to match current UI behavior
+  const search = (params.search ?? "").trim().toLowerCase();
+  const type = params.type ?? "All";
+  const status = params.status ?? "All";
+  const city = params.city ?? "All";
+
+  let filtered = rows;
+  if (search) {
+    filtered = filtered.filter((r) =>
+      `${r.name} ${r.address} ${r.city} ${r.state}`.toLowerCase().includes(search)
+    );
+  }
+  if (type !== "All") filtered = filtered.filter((r) => r.type === type);
+  if (status !== "All") filtered = filtered.filter((r) => r.status === status);
+  if (city !== "All") filtered = filtered.filter(
+    (r) => r.city.toLowerCase() === String(city).toLowerCase()
+  );
+
+  return { rows: filtered, total: filtered.length };
 }
 
 export async function fetchProperty(id: string): Promise<PropertyDetail | null> {
-  if (!USE_MOCKS) {
-    // const res = await fetch(`/api/properties/${id}`);
-    // return res.json();
+  if (USE_MOCKS) {
+    return mockDetails[id] ?? null;
   }
-  return mockDetails[id] ?? null;
+
+  // ---- REAL API PATH (when USE_MOCKS = false) ----
+  // If/when your backend returns a detailed property object, validate and map it here.
+  // For now, fetch the minimal property and lift to your PropertyDetail with safe defaults.
+  const p = await get<TProperty>(`/properties/${id}`, PropertySchema);
+  if (!p) return null;
+
+  const base: PropertyDetail = {
+    id: p.id,
+    name: p.name,
+    address: p.address || "",
+    city: "",
+    state: "",
+    type: "Multifamily",
+    status: "Active",
+    unitsTotal: 0,
+    occupancyPct: 0,
+    ttmNOI: 0,
+    // ---- extended fields with defaults until backend provides them ----
+    class: "B",
+    yearBuilt: undefined,
+    owner: "",
+    avgRent: 0,
+    capRate: 0,
+    expenseBreakdown: { repairsPct: 0, utilitiesPct: 0, managementPct: 0 },
+    insights: [],
+    trends: [],
+    compliance: { insuranceExpiresInDays: 0, missingVendorCOIs: 0, renewalsDueNext30: 0 },
+    units: [],
+    docs: [],
+  };
+
+  return base;
 }
 
 export async function suggestPlans(propertyId: string): Promise<string[]> {
-  if (!USE_MOCKS) {
-    // const res = await fetch(`/api/properties/${propertyId}/plans`, { method: "POST" });
-    // return res.json();
+  if (USE_MOCKS) {
+    const prop = mockDetails[propertyId];
+    if (!prop) return ["No suggestions available."];
+    return [
+      "Publish vacancy promo for Unit 3A (10% off first month, 12-month term).",
+      "Schedule plumbing inspection for vertical stack A (3 units).",
+      "Prepare owner update with NOI +6% YoY and maintenance trend.",
+    ];
   }
-  const prop = mockDetails[propertyId];
-  if (!prop) return ["No suggestions available."];
-  return [
-    "Publish vacancy promo for Unit 3A (10% off first month, 12-month term).",
-    "Schedule plumbing inspection for vertical stack A (3 units).",
-    "Prepare owner update with NOI +6% YoY and maintenance trend.",
-  ];
+
+  // ---- REAL API PATH (when USE_MOCKS = false) ----
+  // Backend could return an array of strings (plan suggestions).
+  // Adjust endpoint/shape when available.
+  const res = await post<string[]>(`/properties/${propertyId}/plans`, {});
+  return Array.isArray(res) ? res : [];
 }
 
 export async function applyPlan(_propertyId: string, _planText: string): Promise<{ ok: true }> {
-  if (!USE_MOCKS) {
-    // const res = await fetch(`/api/properties/${propertyId}/apply-plan`, { method: "POST", body: JSON.stringify({ planText }) });
-    // return res.json();
+  if (USE_MOCKS) {
+    return { ok: true };
   }
+
+  // ---- REAL API PATH (when USE_MOCKS = false) ----
+  // await post(`/properties/${_propertyId}/apply-plan`, { planText: _planText });
   return { ok: true };
 }

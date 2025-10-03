@@ -212,6 +212,9 @@ export function addAgentRun(run: Omit<AgentRun, "id" | "createdAt">): AgentRun {
   return row;
 }
 
+export function getAgentDraftById(id: string): AgentDraft | undefined {
+  return AGENT_DRAFTS.find((d) => d.id === id);
+}
 // (Optional) expose stores for debugging/dev tools
 export const __agentDraftsStore = agentDraftsStore;
 export const __agentRunsStore = agentRunsStore;

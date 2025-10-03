@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MANAGER
+  TENANT
+  VENDOR
+}
+
+enum Channel {
+  EMAIL
+  SMS
+}
+
+enum DraftStatus {
+  PENDING
+  APPROVED
+  SENT
+  FAILED
+}
+
+enum RequestStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      Role
+  phone     String?  @db.VarChar(32)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // relations
+  managedProperties Property[] @relation("ManagerProperties")
+  requests          Request[]  @relation("RequestReporter")
+  vendors           Vendor[]   @relation("VendorUser")
+}
+
+model Property {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  manager   User?    @relation("ManagerProperties", fields: [managerId], references: [id])
+  managerId String?
+
+  requests  Request[]
+  sla       SlaPolicy[]
+}
+
+model Vendor {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner   User?   @relation("VendorUser", fields: [ownerId], references: [id])
+  ownerId String?
+
+  messages Message[]
+}
+
+model Request {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  status      RequestStatus @default(OPEN)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+
+  reporter   User?    @relation("RequestReporter", fields: [reporterId], references: [id])
+  reporterId String?
+
+  drafts        Draft[]
+  notes         AuditLog[]
+  notifications Notification[]   // <-- opposite side for Notification.request
+}
+
+model Draft {
+  id        String      @id @default(cuid())
+  channel   Channel
+  to        String
+  subject   String?
+  body      String
+  status    DraftStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  request   Request  @relation(fields: [requestId], references: [id])
+  requestId String
+
+  message   Message?
+}
+
+model Message {
+  id                String        @id @default(cuid())
+  channel           Channel
+  to                String
+  subject           String?
+  body              String
+  providerMessageId String?
+  status            MessageStatus @default(QUEUED)
+  sentAt            DateTime?
+  createdAt         DateTime      @default(now())
+
+  // one-to-one with Draft
+  draft   Draft?   @relation(fields: [draftId], references: [id])
+  draftId String?  @unique
+
+  vendor  Vendor?  @relation(fields: [vendorId], references: [id])
+  vendorId String?
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String
+  message   String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  request   Request? @relation(fields: [requestId], references: [id])
+  requestId String?
+}
+
+model SlaPolicy {
+  id               String   @id @default(cuid())
+  name             String
+  firstResponseMin Int      @default(60)   // breach if no response within X minutes
+  resolutionMin    Int      @default(1440) // 24h
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  event     String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  request   Request? @relation(fields: [requestId], references: [id])
+  requestId String?
+}
