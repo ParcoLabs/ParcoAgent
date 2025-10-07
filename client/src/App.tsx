@@ -1,10 +1,10 @@
 // client/src/App.tsx
 import * as React from "react";
-import { Switch, Route, Redirect } from "wouter";
+import { Routes, Route, Navigate } from "react-router-dom";
 import DashboardPage from "@/pages/dashboard";
 import RequestsPage from "@/pages/requests";
 import DraftsPage from "@/pages/Drafts";      // <-- case matches file
-import VendorsPage from "@/pages/vendors";   
+import VendorsPage from "@/pages/vendors";   // <-- new page
 import PropertiesPage from "@/pages/properties";
 import SettingsPage from "@/pages/settings";
 import AnalyticsPage from "@/pages/analytics";
@@ -12,16 +12,16 @@ import NotFound from "@/pages/not-found";
 
 export default function App() {
   return (
-    <Switch>
-      <Route path="/" component={() => <Redirect to="/dashboard" />} />
-      <Route path="/dashboard" component={DashboardPage} />
-      <Route path="/requests" component={RequestsPage} />
-      <Route path="/drafts" component={DraftsPage} />
-      <Route path="/vendors" component={VendorsPage} />
-      <Route path="/properties" component={PropertiesPage} />
-      <Route path="/settings" component={SettingsPage} />
-      <Route path="/analytics" component={AnalyticsPage} />
-      <Route component={NotFound} />
-    </Switch>
+    <Routes>
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/requests" element={<RequestsPage />} />
+      <Route path="/drafts" element={<DraftsPage />} />
+      <Route path="/vendors" element={<VendorsPage />} />
+      <Route path="/properties" element={<PropertiesPage />} />
+      <Route path="/settings" element={<SettingsPage />} />
+      <Route path="/analytics" element={<AnalyticsPage />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
   );
 }
