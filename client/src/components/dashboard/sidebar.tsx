@@ -1,4 +1,4 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation } from "react-router-dom";
 import { BarChart3, ClipboardList, Users, Home, User, Settings as SettingsIcon } from "lucide-react"; // 👈 added Settings icon
 import { cn } from "@/lib/utils";
 import ParcoLogo from "@/assets/parco-logo.png"; // <-- match exact name & extension
@@ -12,7 +12,7 @@ const navigation = [
 ];
 
 export default function Sidebar() {
-  const [location] = useLocation();
+  const location = useLocation();
 
   return (
     <div className="bg-white shadow-sm border-r border-gray-200 w-64 flex flex-col md:relative fixed inset-y-0 left-0 z-50 md:translate-x-0 transform -translate-x-full transition-transform duration-300">
@@ -36,9 +36,9 @@ export default function Sidebar() {
       <nav className="flex-1 p-4 space-y-2">
         {navigation.map((item) => {
           const isActive =
-            location === item.href || (item.href === "/" && location === "/dashboard");
+            location.pathname === item.href || (item.href === "/" && location.pathname === "/dashboard");
           return (
-            <Link key={item.name} href={item.href}>
+            <Link key={item.name} to={item.href}>
               <div
                 className={cn(
                   "flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors cursor-pointer",
@@ -68,11 +68,11 @@ export default function Sidebar() {
         </div>
 
         {/* Settings button 👇 */}
-        <Link href="/settings">
+        <Link to="/settings">
           <div
             className={cn(
               "flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors cursor-pointer",
-              location === "/settings"
+              location.pathname === "/settings"
                 ? "bg-green-50 text-green-700 border-r-2 border-green-700 font-medium"
                 : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
             )}
