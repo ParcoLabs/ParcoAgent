@@ -9,13 +9,19 @@ import RequestsList from "@/components/requests/RequestsList";
 import RequestDetailsPane from "@/components/requests/RequestDetailsPane";
 import type { Request } from "@/types/requests";
 
+import { api } from "@/lib/api"; // ✅ add api helper for queryFn
+import GenerateDraftsButton from "@/components/GenerateDraftsButton"; // ✅ new button
+
 export default function RequestsPage() {
   const [selected, setSelected] = React.useState<Request | null>(null);
 
+  // ✅ Provide a queryFn to avoid TanStack "no default queryFn" warnings
   const { data: notifications } = useQuery({
-    queryKey: ["/api/notifications"],
+    queryKey: ["/notifications"],
+    queryFn: () => api<any[]>("/notifications"),
   });
-  const notificationCount = Array.isArray(notifications) ? notifications.length : 3;
+
+  const notificationCount = Array.isArray(notifications) ? notifications.length : 0;
 
   return (
     <div className="flex h-screen bg-gray-50 md:flex-row flex-col">
@@ -28,11 +34,13 @@ export default function RequestsPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header (same style as dashboard) */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl md:text-2xl font-semibold text-gray-900">Requests</h2>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-xl md:text-2xl font-semibold text-gray-900 truncate">
+                Requests {selected ? <span className="text-gray-500 font-normal">· {selected.title}</span> : null}
+              </h2>
               <p className="text-sm md:text-base text-gray-600 hidden sm:block">
-                Today,{" "}
+                Today,&nbsp;
                 {new Date().toLocaleDateString("en-US", {
                   weekday: "long",
                   year: "numeric",
@@ -41,7 +49,13 @@ export default function RequestsPage() {
                 })}
               </p>
             </div>
-            <div className="flex items-center space-x-2 md:space-x-4">
+
+            <div className="flex items-center gap-2 md:gap-4">
+              {/* When a request is selected, show Generate Drafts */}
+              {selected ? (
+                <GenerateDraftsButton requestId={selected.id} />
+              ) : null}
+
               <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-5 h-5" />
                 {notificationCount > 0 && (
@@ -50,7 +64,8 @@ export default function RequestsPage() {
                   </span>
                 )}
               </button>
-              <Button className="bg-green-700 text-white hover:bg-green-800 transition-colors flex items-center space-x-2">
+
+              <Button className="bg-green-700 text-white hover:bg-green-800 transition-colors flex items-center gap-2">
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">New Request</span>
               </Button>
@@ -66,6 +81,11 @@ export default function RequestsPage() {
             </div>
             <div className="lg:col-span-6 xl:col-span-7 min-h-[70vh]">
               <RequestDetailsPane selected={selected} />
+              {!selected ? (
+                <p className="text-sm text-gray-500 mt-4">
+                  Select a request to see details and generate tenant/vendor drafts.
+                </p>
+              ) : null}
             </div>
           </div>
         </main>

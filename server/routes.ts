@@ -150,7 +150,30 @@ router.get("/requests", async (_req, res, next) => {
       return res.json(data);
     }
     return res.json(REQUESTS);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Assign a vendor to a request (simple link + log for demo) */
+router.post("/requests/:id/assign-vendor", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { vendorId, note } = (req.body ?? {}) as { vendorId?: string; note?: string };
+
+    if (!vendorId) return res.status(400).json({ error: "vendorId required" });
+
+    if (USE_DB && repo) {
+      const result = await repo.linkVendorToRequest(id, vendorId, note ?? null);
+      return res.json({ ok: true, result });
+    }
+
+    // Mock path: no vendorId in RequestItem shape, so we just acknowledge
+    console.log("[mock] link vendor", { requestId: id, vendorId, note });
+    return res.json({ ok: true, result: { requestId: id, vendorId, note: note ?? null } });
+  } catch (e) {
+    next(e);
+  }
 });
 
 /* ========================== DRAFTS (DB or Agent) ========================== */
@@ -166,21 +189,33 @@ router.get("/drafts", async (_req, res, next) => {
     const drafts = all.map((d) => ({
       id: d.id,
       requestId: d.requestId,
-      channel: d.channel === "sms" ? "SMS" : "EMAIL",
+      kind: d.kind,                                  // "tenant_reply" | "vendor_outreach"
+      channel: d.channel,                            // "email" | "sms"
       to: d.to,
       subject: d.subject ?? undefined,
       body: d.body,
-      status: d.status?.toUpperCase?.() || "PENDING",
+      status: (d.status?.toUpperCase?.() as "DRAFT" | "SENT" | "FAILED") || "DRAFT",
       createdAt: d.createdAt || new Date().toISOString(),
     }));
     return res.json(drafts);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
-// Your existing agent run: generates drafts in memory
+/* ========================== AGENT RUN (adds `mode`) ======================= */
+/**
+ * Body: { requestId: string, mode?: "tenant_update" | "vendor_outreach" | "both" }
+ * - tenant_update  -> only tenant reply draft
+ * - vendor_outreach -> only vendor outreach draft
+ * - both (default) -> both drafts
+ */
 router.post("/agent/run", async (req, res) => {
   try {
-    const { requestId } = req.body as { requestId?: string };
+    const { requestId, mode } = (req.body ?? {}) as {
+      requestId?: string;
+      mode?: "tenant_update" | "vendor_outreach" | "both";
+    };
     if (!requestId) return res.status(400).json({ error: "requestId required" });
 
     const reqItem = findRequestById(requestId);
@@ -189,26 +224,48 @@ router.post("/agent/run", async (req, res) => {
 
     const category = (reqItem?.category as string) || "Plumbing";
     const property = reqItem?.property || "Unknown Property / Unit";
-    const summary = reqItem?.summary || "New maintenance request received. Details not available in seed data.";
+    const summary =
+      reqItem?.summary || "New maintenance request received. Details not available in seed data.";
     const TEST_EMAIL = "yessociety@gmail.com";
 
-    const tenantDraft: Omit<AgentDraft, "id" | "createdAt" | "status"> = {
-      requestId, kind: "tenant_reply", channel: "email", to: TEST_EMAIL,
-      subject: `We're on it: ${category}`,
-      body: "Thanks for reporting this. We’ve logged your request and will arrange a vendor visit. Reply here if anything changes.",
-      vendorId: null, metadata: { summary, category, priority: reqItem?.priority || "Medium" },
-    };
+    const draftsToAdd: Omit<AgentDraft, "id" | "createdAt" | "status">[] = [];
 
-    const vendorDraft: Omit<AgentDraft, "id" | "createdAt" | "status"> = {
-      requestId, kind: "vendor_outreach", channel: "email", to: TEST_EMAIL,
-      subject: `Service request at ${property}`,
-      body: "Please confirm availability tomorrow 10–12 for diagnosis/repair. Reply to confirm and include any materials/ETA.",
-      vendorId: undefined, metadata: { property, summary, category },
-    };
+    const wantTenant = !mode || mode === "tenant_update" || mode === "both";
+    const wantVendor = !mode || mode === "vendor_outreach" || mode === "both";
 
-    addAgentDrafts(requestId, [tenantDraft, vendorDraft]);
-    res.json({ ok: true });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+    if (wantTenant) {
+      draftsToAdd.push({
+        requestId,
+        kind: "tenant_reply",
+        channel: "email",
+        to: TEST_EMAIL,
+        subject: `We're on it: ${category}`,
+        body:
+          "Thanks for reporting this. We’ve logged your request and will arrange a vendor visit. Reply here if anything changes.",
+        vendorId: null,
+        metadata: { summary, category, priority: reqItem?.priority || "Medium" },
+      });
+    }
+
+    if (wantVendor) {
+      draftsToAdd.push({
+        requestId,
+        kind: "vendor_outreach",
+        channel: "email",
+        to: TEST_EMAIL,
+        subject: `Service request at ${property}`,
+        body:
+          "Please confirm availability tomorrow 10–12 for diagnosis/repair. Reply to confirm and include any materials/ETA.",
+        vendorId: undefined,
+        metadata: { property, summary, category },
+      });
+    }
+
+    addAgentDrafts(requestId, draftsToAdd);
+    res.json({ ok: true, created: draftsToAdd.length });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Agent drafts by requestId (kept for backwards compatibility)
@@ -218,7 +275,9 @@ router.get("/agent/drafts", (req, res) => {
     if (!requestId) return res.status(400).json({ error: "requestId required" });
     const drafts = listAgentDrafts(requestId);
     res.json({ ok: true, drafts });
-  } catch (e: any) { res.status(500).json({ error: e.message }); }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Approve: DB path (if enabled) else in-memory send + mark sent
@@ -244,7 +303,9 @@ router.post("/agent/drafts/:id/approve", async (req, res, next) => {
     const ok = markAgentDraftSent(id);
     if (!ok) return res.status(404).json({ error: "draft not found after send" });
     res.json({ ok: true, sent: true });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 /* ========================== VENDORS/PROPERTIES (DB or Mock) ================ */
@@ -255,7 +316,9 @@ router.get("/vendors", async (_req, res, next) => {
       return res.json(rows);
     }
     return res.json(VENDORS);
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 router.get("/properties", async (_req, res, next) => {
@@ -265,7 +328,9 @@ router.get("/properties", async (_req, res, next) => {
       return res.json(rows.map((p) => ({ id: p.id, name: p.name, address: p.address ?? undefined })));
     }
     return res.json([]); // no mock list here, keep shape stable
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
 export default router;

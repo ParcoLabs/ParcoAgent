@@ -1,5 +1,4 @@
 // client/src/lib/api.ts
-
 import type { ZodTypeAny } from "zod";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH";
@@ -115,8 +114,6 @@ export async function patch<T = unknown>(
 /**
  * Global queryFn for TanStack Query.
  * Expects queryKey[0] to be the API path (e.g. ["/requests"]).
- * You can keep using this for simple GETs where you don't need Zod parsing here.
- * (Per-endpoint adapters can still call get()/parseJson for strict validation.)
  */
 export async function queryFn<T = unknown>({ queryKey }: { queryKey: any }): Promise<T> {
   const [path] = queryKey as [string, any?];
@@ -124,6 +121,70 @@ export async function queryFn<T = unknown>({ queryKey }: { queryKey: any }): Pro
     throw new Error("First queryKey entry must be a string path.");
   }
   return api<T>(path);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Domain Adapters                               */
+/* -------------------------------------------------------------------------- */
+
+// Shared types that tolerate DB enums ("EMAIL"/"SMS") and in-memory ("email"/"sms")
+export type DraftChannel = "EMAIL" | "SMS" | "email" | "sms";
+export type DraftStatusUI = "DRAFT" | "SENT" | "FAILED" | "PENDING";
+export type DraftKind = "tenant_reply" | "vendor_outreach" | string;
+
+export type Draft = {
+  id: string;
+  requestId: string;
+  kind?: DraftKind;
+  channel: DraftChannel;
+  to: string;
+  subject?: string;
+  body: string;
+  status: DraftStatusUI;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+// Requests
+export async function apiListRequests(): Promise<any[]> {
+  // Backend returns a plain array in both mock and DB modes
+  return get<any[]>("/requests");
+}
+
+// Drafts
+export async function apiListDrafts(): Promise<Draft[]> {
+  const rows = await get<any[]>("/drafts");
+  // Normalize case differences if needed
+  return rows.map((d) => ({
+    ...d,
+    channel: d.channel,
+    status: d.status,
+  })) as Draft[];
+}
+
+// Run agent (supports mode: "tenant_update" | "vendor_outreach" | "both")
+export async function apiRunAgent(
+  requestId: string,
+  mode: "tenant_update" | "vendor_outreach" | "both" = "both"
+): Promise<{ ok: boolean; created?: number }> {
+  // Our route responds with { ok, created }
+  return post<{ ok: boolean; created: number }>("/agent/run", { requestId, mode });
+}
+
+// Approve & send a draft
+export async function apiApproveDraft(
+  draftId: string
+): Promise<{ ok: boolean } | { ok: true; sent: true }> {
+  return post(`/agent/drafts/${draftId}/approve`);
+}
+
+// Assign a vendor to a request (demo-friendly)
+export async function apiAssignVendor(
+  requestId: string,
+  vendorId: string,
+  note?: string
+): Promise<{ ok: boolean; result?: any }> {
+  return post(`/requests/${requestId}/assign-vendor`, { vendorId, note });
 }
 
 /* ----------------- internals ----------------- */
