@@ -1,7 +1,7 @@
 // client/src/lib/api.ts
 import type { ZodTypeAny } from "zod";
 
-type HttpMethod = "GET" | "POST" | "PUT" | "PATCH";
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
  * BASE rules:
