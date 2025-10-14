@@ -1,6 +1,7 @@
 // server/services/llm.ts
 // ESM TypeScript. Uses global fetch (Node 18+).
-// Logs whether it's using real OpenAI or the mock so it's obvious in console.
+// Uses OPENAI_BASE_URL when present (Replit ModelFarm proxy), else public API.
+// Logs path taken; falls back safely to mock on error.
 
 type ComposeTarget = "tenant" | "vendor";
 type ComposeTone = "neutral" | "friendly" | "firm";
@@ -22,21 +23,21 @@ export async function composeMessage(
 ): Promise<{ subject: string; body: string }> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   const model = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+  const base = (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com").replace(/\/+$/,"");
 
-  // If no key, use mock and say so in logs.
   if (!apiKey) {
     console.info("[llm] OPENAI_API_KEY missing — using MOCK drafts");
     return mockCompose(input);
   }
 
-  // Build prompt
   const prompt = buildPrompt(input);
 
   try {
-    console.info(`[llm] using OpenAI model=${model}`);
+    // Prefer Responses API
+    const url = `${base}/v1/responses`;
+    console.info(`[llm] using OpenAI model=${model} via ${url}`);
 
-    // Prefer Responses API; if it fails, we try Chat Completions once before falling back.
-    const res = await fetch("https://api.openai.com/v1/responses", {
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -47,7 +48,6 @@ export async function composeMessage(
         input: prompt,
         temperature: 0.4,
         max_output_tokens: 600,
-        // ask for plain text; some runtimes surface output_text
         text: { format: { type: "text" } },
       }),
     });
@@ -55,19 +55,18 @@ export async function composeMessage(
     if (!res.ok) {
       const text = await safeText(res);
       console.warn("[llm] responses API error:", res.status, res.statusText, text);
-      return await tryChatCompletions(prompt, apiKey, model, input);
+      return await tryChatCompletions(prompt, apiKey, model, base, input);
     }
 
     const data = await safeJson(res);
     const raw =
       (typeof data?.output_text === "string" && data.output_text) ||
-      (Array.isArray(data?.output) &&
-        data.output[0]?.content?.[0]?.text) ||
+      (Array.isArray(data?.output) && data.output[0]?.content?.[0]?.text) ||
       "";
 
     if (!raw) {
-      console.warn("[llm] responses API returned empty output — trying chat.completions");
-      return await tryChatCompletions(prompt, apiKey, model, input);
+      console.warn("[llm] responses API empty output — trying chat.completions");
+      return await tryChatCompletions(prompt, apiKey, model, base, input);
     }
 
     const { subject, body } = splitSubjectBody(raw);
@@ -78,16 +77,17 @@ export async function composeMessage(
   }
 }
 
-/* ------------------------------- fallbacks -------------------------------- */
-
 async function tryChatCompletions(
   prompt: string,
   apiKey: string,
   model: string,
+  base: string,
   input: ComposeInput
 ) {
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const url = `${base}/v1/chat/completions`;
+    console.info(`[llm] fallback: using ${url} model=${model}`);
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -108,10 +108,7 @@ async function tryChatCompletions(
     }
 
     const data = await safeJson(res);
-    const raw =
-      data?.choices?.[0]?.message?.content?.toString() ??
-      "";
-
+    const raw = data?.choices?.[0]?.message?.content?.toString() ?? "";
     if (!raw) {
       console.warn("[llm] chat.completions empty output — using MOCK");
       return mockCompose(input);
@@ -146,17 +143,16 @@ function buildPrompt(input: ComposeInput): string {
     `CATEGORY: ${request.category ?? "General"}`,
     `PRIORITY: ${request.priority ?? "Normal"}`,
     `REQUEST SUMMARY: ${request.summary}`,
-    ``,
-    `Strict format:`,
-    `Subject: <short subject line>`,
-    ``,
-    `Body:`,
-    `<email body, plain text, short paragraphs, no markdown>`,
+    "",
+    "Strict format:",
+    "Subject: <short subject line>",
+    "",
+    "Body:",
+    "<email body, plain text, short paragraphs, no markdown>",
   ].join("\n");
 }
 
 function splitSubjectBody(raw: string): { subject: string; body: string } {
-  // Accept "Subject: ..." and optional "Body:" marker.
   const subjectMatch = raw.match(/Subject:\s*(.+)/i);
   const bodyIndex = raw.search(/\bBody:\b/i);
 
@@ -188,7 +184,8 @@ function mockCompose(input: ComposeInput): { subject: string; body: string } {
   }
   return {
     subject: `We're on it: ${request.category ?? "General"}`,
-    body: `Thanks for reporting this. We’ve logged your request and will arrange a vendor visit. Reply here if anything changes.`,
+    body:
+      "Thanks for reporting this. We’ve logged your request and will arrange a vendor visit. Reply here if anything changes.",
   };
 }
 
