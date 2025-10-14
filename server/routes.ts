@@ -21,6 +21,9 @@ import {
   type AgentDraft,
 } from "./storage.js";
 
+// Import the new agent function with OpenAI support
+import { runAgentForRequest } from "./agent.js";
+
 // If DB mode, load prisma repos (lazy ESM import)
 let repo: null | typeof import("./db/repos.js") = null;
 if (USE_DB) {
@@ -253,44 +256,37 @@ router.post("/agent/run", async (req, res) => {
     if (!requestId) return res.status(400).json({ error: "requestId required" });
 
     const reqItem = findRequestById(requestId);
-    addAgentRun({ requestId, status: "success", model: "mock", tokensIn: 0, tokensOut: 0, error: null });
-
-    const category = (reqItem?.category as string) || "Plumbing";
-    const property = reqItem?.property || "Unknown Property / Unit";
-    const summary = reqItem?.summary || "New maintenance request received. Details not available in seed data.";
-    const TEST_EMAIL = "yessociety@gmail.com";
-
-    const draftsToAdd: Omit<AgentDraft, "id" | "createdAt" | "status">[] = [];
-    const wantTenant = !mode || mode === "tenant_update" || mode === "both";
-    const wantVendor = !mode || mode === "vendor_outreach" || mode === "both";
-
-    if (wantTenant) {
-      draftsToAdd.push({
-        requestId,
-        kind: "tenant_reply",
-        channel: "email",
-        to: TEST_EMAIL,
-        subject: `We're on it: ${category}`,
-        body: "Thanks for reporting this. We’ve logged your request and will arrange a vendor visit. Reply here if anything changes.",
-        vendorId: null,
-        metadata: { summary, category, priority: reqItem?.priority || "Medium" },
-      });
-    }
-    if (wantVendor) {
-      draftsToAdd.push({
-        requestId,
-        kind: "vendor_outreach",
-        channel: "email",
-        to: TEST_EMAIL,
-        subject: `Service request at ${property}`,
-        body: "Please confirm availability tomorrow 10–12 for diagnosis/repair. Reply to confirm and include any materials/ETA.",
-        vendorId: undefined,
-        metadata: { property, summary, category },
-      });
+    if (!reqItem) {
+      return res.status(404).json({ error: "Request not found" });
     }
 
-    addAgentDrafts(requestId, draftsToAdd);
-    res.json({ ok: true, created: draftsToAdd.length, mode: mode ?? "both" });
+    // Use the new runAgentForRequest function that supports OpenAI
+    const isUsingOpenAI = process.env.USE_REAL_OPENAI === "true";
+    console.log(`[API] Running agent for request ${requestId} using ${isUsingOpenAI ? 'OpenAI' : 'Mock LLM'}`);
+    
+    const result = await runAgentForRequest(requestId, {
+      subject: reqItem.summary,
+      body: `Category: ${reqItem.category}, Priority: ${reqItem.priority}, Property: ${reqItem.property}, Status: ${reqItem.status}`,
+    });
+
+    // The agent run is already logged inside runAgentForRequest
+    // The drafts are also already created inside runAgentForRequest
+    
+    res.json({ 
+      ok: true, 
+      created: result?.drafts?.length || 0, 
+      mode: mode ?? "both",
+      model: isUsingOpenAI ? "openai-gpt-4.1-mini" : "mock",
+      category: result?.category,
+      priority: result?.priority,
+      summary: result?.summary,
+      usingOpenAI: isUsingOpenAI,
+    });
+  } catch (e: any) {
+    console.error(`[API] Error in /agent/run:`, e);
+    res.status(500).json({ error: e.message });
+  }
+});
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
