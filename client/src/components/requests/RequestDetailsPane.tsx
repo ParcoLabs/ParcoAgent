@@ -7,10 +7,12 @@ import { Separator } from "@/components/ui/separator";
 import { useRequest } from "@/lib/requests.hooks";
 import type { Request } from "@/types/requests";
 import { Phone, Mail, MessageSquare, Wrench } from "lucide-react";
+
 import AIComposerModal from "./AIComposerModal";
 import AssignVendorModal from "./AssignVendorModal";
+import AssignVendorPanel from "./AssignVendorPanel";
 
-// ─── NEW: local type for agent drafts ─────────────────────────────────────────
+// Local draft type (UI)
 type Draft = {
   id: string;
   createdAt: string;
@@ -22,19 +24,12 @@ type Draft = {
   body: string;
 };
 
-export default function RequestDetailsPane({
-  selected,
-}: {
-  selected?: Request | null;
-}) {
+export default function RequestDetailsPane({ selected }: { selected?: Request | null }) {
   const { data } = useRequest(selected?.id);
   const [composeOpen, setComposeOpen] = React.useState(false);
-  const [composeTarget, setComposeTarget] = React.useState<
-    "tenant" | "vendor" | "owner"
-  >("tenant");
+  const [composeTarget, setComposeTarget] = React.useState<"tenant" | "vendor" | "owner">("tenant");
   const [assignOpen, setAssignOpen] = React.useState(false);
 
-  // ─── NEW: agent drafts state ────────────────────────────────────────────────
   const [drafts, setDrafts] = React.useState<Draft[]>([]);
   const [draftsLoading, setDraftsLoading] = React.useState(false);
   const requestId = selected?.id;
@@ -69,7 +64,6 @@ export default function RequestDetailsPane({
   }
 
   React.useEffect(() => {
-    // load drafts whenever the selected request changes
     loadDrafts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestId]);
@@ -84,6 +78,7 @@ export default function RequestDetailsPane({
 
   return (
     <div className="space-y-4">
+      {/* --- Request header --- */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
@@ -109,6 +104,7 @@ export default function RequestDetailsPane({
             Created {new Date(selected.createdAt).toLocaleString()}
           </div>
           <p>{data?.description}</p>
+
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <div className="font-medium">Tenant</div>
@@ -138,29 +134,17 @@ export default function RequestDetailsPane({
         </CardContent>
       </Card>
 
+      {/* --- Inline Assign Vendor (dropdown + button) --- */}
       <Card>
         <CardHeader>
-          <CardTitle>Timeline</CardTitle>
+          <CardTitle>Assign Vendor</CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-3">
-            {data?.timeline?.map((t) => (
-              <li key={t.id} className="text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{t.actor}</Badge>
-                  <span className="text-muted-foreground">
-                    {new Date(t.createdAt).toLocaleString()}
-                  </span>
-                </div>
-                <div>{t.message}</div>
-                <Separator className="my-2" />
-              </li>
-            ))}
-          </ul>
+          <AssignVendorPanel requestId={selected.id} category={selected.category} />
         </CardContent>
       </Card>
 
-      {/* ─── NEW: AI Agent Drafts panel ─────────────────────────────────────── */}
+      {/* --- Agent drafts --- */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
@@ -211,6 +195,7 @@ export default function RequestDetailsPane({
         </CardContent>
       </Card>
 
+      {/* --- Actions row (kept) --- */}
       <Card>
         <CardHeader>
           <CardTitle>Actions</CardTitle>
@@ -237,11 +222,12 @@ export default function RequestDetailsPane({
           </Button>
           <Button variant="outline" onClick={() => setAssignOpen(true)}>
             <Wrench className="w-4 h-4 mr-2" />
-            Assign Vendor
+            Assign Vendor (Modal)
           </Button>
         </CardContent>
       </Card>
 
+      {/* Modals */}
       <AIComposerModal
         open={composeOpen}
         onOpenChange={setComposeOpen}

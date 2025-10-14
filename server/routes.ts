@@ -1,13 +1,17 @@
+// server/routes.ts
 import { Router } from "express";
 
 // Toggle DB mode with env var: USE_DB=true
 const USE_DB = String(process.env.USE_DB || "").toLowerCase() === "true";
 
-// Email/SMS services
+// Email/SMS services (ESM .js)
 import { sendEmail } from "./services/email.js";
 import { sendSMS } from "./services/sms.js";
 
-// In-memory agent storage (your existing module)
+// NEW: LLM compose service
+import { composeMessage } from "./services/llm.js";
+
+// In-memory agent storage
 import {
   addAgentDrafts,
   listAgentDrafts,
@@ -17,7 +21,7 @@ import {
   type AgentDraft,
 } from "./storage.js";
 
-// If DB mode, load prisma repos
+// If DB mode, load prisma repos (lazy ESM import)
 let repo: null | typeof import("./db/repos.js") = null;
 if (USE_DB) {
   repo = await import("./db/repos.js");
@@ -40,6 +44,8 @@ export type RequestItem = {
   status: Status;
   slaDueAt: string;
   summary: string;
+  vendorId?: string;
+  activity?: Array<{ ts: string; kind: "assign_vendor"; vendorId: string; note: string | null }>;
 };
 
 const now = new Date();
@@ -131,8 +137,38 @@ const NOTIFICATIONS = [
   { id: "N002", message: "SLA deadline approaching for 2 requests", type: "warning", timestamp: iso(addHours(-2)) },
 ];
 
+/* ================================ JOBS (mock) ============================== */
+type JobStatus = "pending" | "in_progress" | "completed";
+type Job = {
+  id: string;
+  requestId: string;
+  vendorId: string;
+  status: JobStatus;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  lastMessageAt?: string | null;
+  notes?: string[];
+};
+const JOBS: Job[] = [];
+
 function findRequestById(id: string) {
   return REQUESTS.find((r) => r.id === id);
+}
+
+function createJobIfNeeded(requestId: string, vendorId: string, note?: string | null) {
+  const exists = JOBS.find((j) => j.requestId === requestId && j.vendorId === vendorId);
+  if (exists) return exists;
+  const job: Job = {
+    id: `JOB-${Math.random().toString(36).slice(2, 9)}`,
+    requestId,
+    vendorId,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    notes: note ? [note] : [],
+  };
+  JOBS.push(job);
+  return job;
 }
 
 /* ========================== ANALYTICS + MOCK ROUTES ======================== */
@@ -155,29 +191,33 @@ router.get("/requests", async (_req, res, next) => {
   }
 });
 
-/** Assign a vendor to a request (simple link + log for demo) */
+/** Assign a vendor to a request (simple link + log + create job) */
 router.post("/requests/:id/assign-vendor", async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params as { id: string };
     const { vendorId, note } = (req.body ?? {}) as { vendorId?: string; note?: string };
-
     if (!vendorId) return res.status(400).json({ error: "vendorId required" });
 
-    if (USE_DB && repo) {
-      const result = await repo.linkVendorToRequest(id, vendorId, note ?? null);
+    if (USE_DB && repo && typeof (repo as any).linkVendorToRequest === "function") {
+      const result = await (repo as any).linkVendorToRequest(id, vendorId, note ?? null);
       return res.json({ ok: true, result });
     }
 
-    // Mock path: no vendorId in RequestItem shape, so we just acknowledge
-    console.log("[mock] link vendor", { requestId: id, vendorId, note });
-    return res.json({ ok: true, result: { requestId: id, vendorId, note: note ?? null } });
+    const r = findRequestById(id);
+    if (!r) return res.status(404).json({ error: "request not found" });
+    r.vendorId = vendorId;
+    r.activity = (r.activity ?? []).concat([
+      { ts: new Date().toISOString(), kind: "assign_vendor", vendorId, note: note ?? null },
+    ]);
+
+    const job = createJobIfNeeded(id, vendorId, note ?? null);
+    return res.json({ ok: true, requestId: id, vendorId, job });
   } catch (e) {
     next(e);
   }
 });
 
 /* ========================== DRAFTS (DB or Agent) ========================== */
-// List all drafts (DB) or aggregate from in-memory agent drafts (fallback)
 router.get("/drafts", async (_req, res, next) => {
   try {
     if (USE_DB && repo) {
@@ -189,8 +229,8 @@ router.get("/drafts", async (_req, res, next) => {
     const drafts = all.map((d) => ({
       id: d.id,
       requestId: d.requestId,
-      kind: d.kind,                                  // "tenant_reply" | "vendor_outreach"
-      channel: d.channel,                            // "email" | "sms"
+      kind: d.kind,
+      channel: d.channel,
       to: d.to,
       subject: d.subject ?? undefined,
       body: d.body,
@@ -204,12 +244,6 @@ router.get("/drafts", async (_req, res, next) => {
 });
 
 /* ========================== AGENT RUN (adds `mode`) ======================= */
-/**
- * Body: { requestId: string, mode?: "tenant_update" | "vendor_outreach" | "both" }
- * - tenant_update  -> only tenant reply draft
- * - vendor_outreach -> only vendor outreach draft
- * - both (default) -> both drafts
- */
 router.post("/agent/run", async (req, res) => {
   try {
     const { requestId, mode } = (req.body ?? {}) as {
@@ -219,17 +253,14 @@ router.post("/agent/run", async (req, res) => {
     if (!requestId) return res.status(400).json({ error: "requestId required" });
 
     const reqItem = findRequestById(requestId);
-
     addAgentRun({ requestId, status: "success", model: "mock", tokensIn: 0, tokensOut: 0, error: null });
 
     const category = (reqItem?.category as string) || "Plumbing";
     const property = reqItem?.property || "Unknown Property / Unit";
-    const summary =
-      reqItem?.summary || "New maintenance request received. Details not available in seed data.";
+    const summary = reqItem?.summary || "New maintenance request received. Details not available in seed data.";
     const TEST_EMAIL = "yessociety@gmail.com";
 
     const draftsToAdd: Omit<AgentDraft, "id" | "createdAt" | "status">[] = [];
-
     const wantTenant = !mode || mode === "tenant_update" || mode === "both";
     const wantVendor = !mode || mode === "vendor_outreach" || mode === "both";
 
@@ -240,13 +271,11 @@ router.post("/agent/run", async (req, res) => {
         channel: "email",
         to: TEST_EMAIL,
         subject: `We're on it: ${category}`,
-        body:
-          "Thanks for reporting this. We’ve logged your request and will arrange a vendor visit. Reply here if anything changes.",
+        body: "Thanks for reporting this. We’ve logged your request and will arrange a vendor visit. Reply here if anything changes.",
         vendorId: null,
         metadata: { summary, category, priority: reqItem?.priority || "Medium" },
       });
     }
-
     if (wantVendor) {
       draftsToAdd.push({
         requestId,
@@ -254,21 +283,19 @@ router.post("/agent/run", async (req, res) => {
         channel: "email",
         to: TEST_EMAIL,
         subject: `Service request at ${property}`,
-        body:
-          "Please confirm availability tomorrow 10–12 for diagnosis/repair. Reply to confirm and include any materials/ETA.",
+        body: "Please confirm availability tomorrow 10–12 for diagnosis/repair. Reply to confirm and include any materials/ETA.",
         vendorId: undefined,
         metadata: { property, summary, category },
       });
     }
 
     addAgentDrafts(requestId, draftsToAdd);
-    res.json({ ok: true, created: draftsToAdd.length });
+    res.json({ ok: true, created: draftsToAdd.length, mode: mode ?? "both" });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Agent drafts by requestId (kept for backwards compatibility)
 router.get("/agent/drafts", (req, res) => {
   try {
     const { requestId } = req.query as { requestId?: string };
@@ -280,10 +307,9 @@ router.get("/agent/drafts", (req, res) => {
   }
 });
 
-// Approve: DB path (if enabled) else in-memory send + mark sent
 router.post("/agent/drafts/:id/approve", async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params as { id: string };
     if (USE_DB && repo) {
       const result = await repo.approveAndSendDraft(id);
       return res.json(result);
@@ -308,6 +334,40 @@ router.post("/agent/drafts/:id/approve", async (req, res, next) => {
   }
 });
 
+/* ============================== JOB ROUTES (mock) ========================= */
+router.get("/jobs", (req, res) => {
+  const { vendorId, requestId } = req.query as { vendorId?: string; requestId?: string };
+  let rows = [...JOBS];
+  if (vendorId) rows = rows.filter((j) => j.vendorId === vendorId);
+  if (requestId) rows = rows.filter((j) => j.requestId === requestId);
+  res.json(rows);
+});
+
+router.post("/jobs/:id/progress", (req, res) => {
+  const { id } = req.params as { id: string };
+  const { note } = (req.body ?? {}) as { note?: string };
+  const job = JOBS.find((j) => j.id === id);
+  if (!job) return res.status(404).json({ error: "job not found" });
+  if (job.status === "completed") return res.status(400).json({ error: "job already completed" });
+
+  job.status = "in_progress";
+  job.startedAt = job.startedAt ?? new Date().toISOString();
+  job.notes = (job.notes ?? []).concat(note ? [note] : []);
+  res.json({ ok: true, job });
+});
+
+router.post("/jobs/:id/complete", (req, res) => {
+  const { id } = req.params as { id: string };
+  const { note } = (req.body ?? {}) as { note?: string };
+  const job = JOBS.find((j) => j.id === id);
+  if (!job) return res.status(404).json({ error: "job not found" });
+
+  job.status = "completed";
+  job.completedAt = new Date().toISOString();
+  job.notes = (job.notes ?? []).concat(note ? [note] : []);
+  res.json({ ok: true, job });
+});
+
 /* ========================== VENDORS/PROPERTIES (DB or Mock) ================ */
 router.get("/vendors", async (_req, res, next) => {
   try {
@@ -315,7 +375,15 @@ router.get("/vendors", async (_req, res, next) => {
       const rows = await repo.listVendors();
       return res.json(rows);
     }
-    return res.json(VENDORS);
+    return res.json(
+      VENDORS.map((v) => ({
+        id: v.id,
+        name: v.name,
+        email: undefined,
+        phone: undefined,
+        category: (v as any).category || v.trade || "general",
+      }))
+    );
   } catch (e) {
     next(e);
   }
@@ -327,7 +395,111 @@ router.get("/properties", async (_req, res, next) => {
       const rows = await repo.listProperties();
       return res.json(rows.map((p) => ({ id: p.id, name: p.name, address: p.address ?? undefined })));
     }
-    return res.json([]); // no mock list here, keep shape stable
+    return res.json([]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* =============================== WEBHOOK STUBS ============================ */
+const DONE_WORDS = ["done", "completed", "finished", "fixed", "resolved"];
+function textHasDoneWord(s: string) {
+  const t = (s || "").toLowerCase();
+  return DONE_WORDS.some((w) => t.includes(w));
+}
+function extractReqId(s: string): string | null {
+  const m = (s || "").match(/REQ[:\s\-]?([A-Za-z0-9\-]+)/i);
+  return m?.[1] ? (m[1].startsWith("REQ-") ? m[1] : `REQ-${m[1]}`) : null;
+}
+
+router.post("/webhooks/email", (req, res) => {
+  const { subject = "", text = "" } = (req.body ?? {}) as { subject?: string; text?: string };
+  const reqId = extractReqId(`${subject} ${text}`);
+  if (!reqId || !textHasDoneWord(`${subject} ${text}`)) return res.json({ ok: true, ignored: true });
+  const job = JOBS.find((j) => j.requestId === reqId);
+  if (!job) return res.json({ ok: true, ignored: "no-job" });
+  job.status = "completed";
+  job.completedAt = new Date().toISOString();
+  job.lastMessageAt = new Date().toISOString();
+  job.notes = (job.notes ?? []).concat("Auto-completed via email webhook");
+  res.json({ ok: true, job });
+});
+
+router.post("/webhooks/sms", (req, res) => {
+  const { Body = "" } = (req.body ?? {}) as { Body?: string };
+  const reqId = extractReqId(Body);
+  if (!reqId || !textHasDoneWord(Body)) return res.json({ ok: true, ignored: true });
+  const job = JOBS.find((j) => j.requestId === reqId);
+  if (!job) return res.json({ ok: true, ignored: "no-job" });
+  job.status = "completed";
+  job.completedAt = new Date().toISOString();
+  job.lastMessageAt = new Date().toISOString();
+  job.notes = (job.notes ?? []).concat("Auto-completed via sms webhook");
+  res.json({ ok: true, job });
+});
+
+/* =========================== LLM COMPOSE ENDPOINT ========================= */
+// This is the missing route that the UI (AIComposerModal) and your curl call use.
+router.post("/compose/message", async (req, res, next) => {
+  try {
+    const { target, request, tone } = (req.body ?? {}) as {
+      target?: "tenant" | "vendor" | "owner";
+      request?: {
+        id?: string;
+        summary?: string;
+        category?: string;
+        priority?: string;
+        property?: string;
+      };
+      tone?: string;
+    };
+
+    if (!target) return res.status(400).json({ error: "target is required" });
+
+    const out = await composeMessage({
+      target,
+      request: {
+        id: request?.id,
+        summary: request?.summary,
+        category: request?.category,
+        priority: request?.priority,
+        property: request?.property,
+      },
+      tone: tone ?? "neutral",
+    });
+
+    res.json(out);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// --- Vendor Jobs (mock aggregator) ------------------------------------------
+router.get("/vendor-jobs", async (_req, res, next) => {
+  try {
+    if (USE_DB && repo && typeof (repo as any).listVendorJobs === "function") {
+      const rows = await (repo as any).listVendorJobs();
+      return res.json(rows);
+    }
+    const byId = new Map(VENDORS.map(v => [v.id, v]));
+    const jobs = REQUESTS
+      .filter(r => !!r.vendorId)
+      .map(r => ({
+        id: `JOB-${r.id}`,
+        requestId: r.id,
+        vendorId: r.vendorId!,
+        vendorName: byId.get(r.vendorId!)?.name || "Vendor",
+        title: r.summary || r.category || "Request",
+        category: r.category,
+        priority: r.priority,
+        status: r.status,
+        property: r.property,
+        createdAt: r.createdAt,
+        lastActivityAt: r.activity?.at(-1)?.ts ?? r.createdAt,
+        note: r.activity?.at(-1)?.note ?? null,
+      }));
+
+    res.json(jobs);
   } catch (e) {
     next(e);
   }

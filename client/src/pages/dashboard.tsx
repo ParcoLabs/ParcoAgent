@@ -1,12 +1,14 @@
+// client/src/pages/dashboard.tsx
 import { useQuery } from "@tanstack/react-query";
 import Sidebar from "@/components/dashboard/sidebar";
-import StatsCards from "@/components/dashboard/stats-cards";
-import NewRequestForm from "@/components/dashboard/new-request-form";
-import AISuggestion from "@/components/dashboard/ai-suggestion";
-import RequestsTable from "@/components/dashboard/requests-table";
-import SLAAlerts from "@/components/dashboard/sla-alerts";
-import CategoryChart from "@/components/dashboard/category-chart";
-import TopVendors from "@/components/dashboard/top-vendors";
+import StatsTiles from "@/components/dashboard/StatsTiles"; // ✅ NEW
+import StatsCards from "@/components/dashboard/stats-cards"; // ✅ KEEP
+import NewRequestForm from "@/components/dashboard/new-request-form"; // ✅ KEEP
+import AISuggestion from "@/components/dashboard/ai-suggestion"; // ✅ KEEP
+import RequestsTable from "@/components/dashboard/requests-table"; // ✅ KEEP
+import SLAAlerts from "@/components/dashboard/sla-alerts"; // ✅ KEEP
+import CategoryChart from "@/components/dashboard/category-chart"; // ✅ KEEP
+import TopVendors from "@/components/dashboard/top-vendors"; // ✅ KEEP
 import { Bell, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -15,7 +17,7 @@ export default function Dashboard() {
   const [aiSuggestion, setAiSuggestion] = useState(null);
 
   const { data: notifications } = useQuery({
-    queryKey: ["/api/notifications"],
+    queryKey: ["/notifications"], // ✅ Correct path
   });
 
   const notificationCount = Array.isArray(notifications) ? notifications.length : 3;
@@ -25,20 +27,25 @@ export default function Dashboard() {
       <div className="md:block hidden">
         <Sidebar />
       </div>
-      
+
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl md:text-2xl font-semibold text-gray-900">Property Management Dashboard</h2>
-              <p className="text-sm md:text-base text-gray-600 hidden sm:block">Today, {new Date().toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}</p>
+              <h2 className="text-xl md:text-2xl font-semibold text-gray-900">
+                Property Management Dashboard
+              </h2>
+              <p className="text-sm md:text-base text-gray-600 hidden sm:block">
+                Today,&nbsp;
+                {new Date().toLocaleDateString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
             </div>
             <div className="flex items-center space-x-2 md:space-x-4">
               <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
@@ -59,15 +66,17 @@ export default function Dashboard() {
 
         {/* Main Dashboard Content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          {/* ✅ NEW: StatsTiles from /dashboard/stats */}
+          <StatsTiles />
+
+          {/* ✅ Existing cards & sections */}
           <StatsCards />
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mt-6 md:mt-8">
             {/* Recent Requests & AI Suggestions */}
             <div className="lg:col-span-2 space-y-4 md:space-y-6">
               <NewRequestForm onSuggestion={setAiSuggestion} />
-              
               {aiSuggestion && <AISuggestion suggestion={aiSuggestion} />}
-              
               <RequestsTable />
             </div>
 

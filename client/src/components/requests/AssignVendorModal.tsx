@@ -5,18 +5,24 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { useAssignVendor, useVendors } from "@/lib/requests.hooks";
-import type { Category, Vendor } from "@/types/requests";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
+import { useVendors, useAssignVendor } from "@/lib/hooks";
+// ✅ Fix: use the correct alias "@/…" (not "@components/…")
+import { useToast } from "@/components/ui/use-toast";
 
-export type AssignVendorModalProps = {
+type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   requestId: string;
-  category?: Category;
+  category?: string;
 };
 
 export default function AssignVendorModal({
@@ -24,68 +30,69 @@ export default function AssignVendorModal({
   onOpenChange,
   requestId,
   category,
-}: AssignVendorModalProps) {
-  const { data } = useVendors(category);
-  const assign = useAssignVendor();
-  const [selected, setSelected] = React.useState<Vendor | null>(null);
+}: Props) {
+  const { data: vendors = [], isLoading } = useVendors();
+  const [vendorId, setVendorId] = React.useState<string>("");
+  const { mutateAsync: assign, isPending } = useAssignVendor();
+  const { toast } = useToast();
+
+  React.useEffect(() => {
+    setVendorId("");
+  }, [open, requestId]);
+
+  const filtered =
+    vendors.filter((v) =>
+      category
+        ? (v.category || "").toLowerCase() === category.toLowerCase()
+        : true
+    ) || vendors;
+
+  async function onAssign() {
+    if (!vendorId) {
+      toast({
+        title: "Pick a vendor",
+        description: "Select a vendor from the list.",
+        variant: "destructive",
+      });
+      return;
+    }
+    await assign({ requestId, vendorId });
+    toast({ title: "Vendor assigned" });
+    onOpenChange(false);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign Vendor</DialogTitle>
+          <DialogTitle>Assign vendor</DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
-          {data?.map((v) => (
-            <button
-              key={v.id}
-              className={`w-full text-left p-3 rounded-lg border hover:bg-muted ${
-                selected?.id === v.id ? "ring-2 ring-primary" : ""
-              }`}
-              onClick={() => setSelected(v)}
-            >
-              <div className="flex items-center justify-between">
-                <div className="font-medium">{v.name}</div>
-                <div className="flex gap-2 items-center">
-                  {v.preferred && <Badge>Preferred</Badge>}
-                  {typeof v.rating === "number" && (
-                    <Badge variant="secondary">{v.rating.toFixed(1)}★</Badge>
-                  )}
-                  {typeof v.etaMinutes === "number" && (
-                    <Badge variant="outline">
-                      ETA ~{Math.round(v.etaMinutes / 60)}h
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Category: {v.category} • {v.email ?? v.phone}
-              </div>
-            </button>
-          ))}
-          {!data?.length && (
-            <div className="text-sm text-muted-foreground">
-              No vendors found for this category.
-            </div>
-          )}
+
+        <div className="space-y-3">
+          <Select value={vendorId} onValueChange={setVendorId}>
+            <SelectTrigger>
+              <SelectValue
+                placeholder={isLoading ? "Loading..." : "Select a vendor"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {(filtered.length ? filtered : vendors).map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  {v.name} {v.category ? `• ${v.category}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={onAssign} disabled={isPending || !vendorId}>
+              {isPending ? "Assigning…" : "Assign"}
+            </Button>
+          </div>
         </div>
-        <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!selected || assign.isPending}
-            onClick={() =>
-              selected &&
-              assign.mutate(
-                { requestId, vendorId: selected.id },
-                { onSuccess: () => onOpenChange(false) }
-              )
-            }
-          >
-            Assign
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

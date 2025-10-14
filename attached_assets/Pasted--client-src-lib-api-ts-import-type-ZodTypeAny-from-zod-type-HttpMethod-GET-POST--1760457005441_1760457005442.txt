@@ -3,16 +3,12 @@ import type { ZodTypeAny } from "zod";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-/** BASE:
- * - If VITE_API_BASE_URL is set, use it (e.g., http://localhost:5000 or http://localhost:5000/api)
- * - Else default to same-origin "/api"
- */
 export const BASE: string =
   (import.meta as any)?.env?.VITE_API_BASE_URL?.toString().replace(/\/$/, "") || "/api";
 
-/* ----------------------------------------------------------------------------
- * Low-level helpers
- * --------------------------------------------------------------------------*/
+/* -------------------------------------------------------------------------- */
+/* low-level                                                                  */
+/* -------------------------------------------------------------------------- */
 export async function api<T = unknown>(
   path: string,
   opts: { method?: HttpMethod; body?: any; headers?: Record<string, string> } = {}
@@ -23,69 +19,37 @@ export async function api<T = unknown>(
     ...(import.meta.env.VITE_API_KEY ? { "x-api-key": String(import.meta.env.VITE_API_KEY) } : {}),
     ...(opts.headers || {}),
   };
-
   const res = await fetch(url, {
     method: opts.method || "GET",
     headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-
-  if (!res.ok) {
-    throw new Error((await safeText(res)) || res.statusText || `HTTP ${res.status}`);
-  }
+  if (!res.ok) throw new Error((await safeText(res)) || res.statusText || `HTTP ${res.status}`);
   if (res.status === 204) return undefined as T;
   return (await safeJson(res)) as T;
 }
 
-export async function parseJson<T>(res: Response, schema: ZodTypeAny): Promise<T> {
-  if (!res.ok) throw new Error((await safeText(res)) || res.statusText || `HTTP ${res.status}`);
-  if (res.status === 204) return undefined as T;
-  const data = await safeJson(res);
-  return schema.parse(data);
-}
-
 export async function get<T = unknown>(path: string, schema?: ZodTypeAny): Promise<T> {
   const res = await fetch(`${BASE}${normalizePath(path)}`, { headers: baseHeaders(), method: "GET" });
-  return schema ? parseJson<T>(res, schema) : ((await res.json()) as T);
+  if (!res.ok) throw new Error(await res.text());
+  const data = (await res.json()) as T;
+  return schema ? (schema.parse(data) as T) : data;
 }
 
-export async function post<T = unknown>(path: string, body?: any, schema?: ZodTypeAny): Promise<T> {
-  const res = await fetch(`${BASE}${normalizePath(path)}`, {
-    method: "POST",
-    headers: baseHeaders(true),
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return schema ? parseJson<T>(res, schema) : ((await res.json()) as T);
+export async function post<T = unknown>(path: string, body?: any): Promise<T> {
+  return api<T>(path, { method: "POST", body });
 }
 
-export async function put<T = unknown>(path: string, body?: any, schema?: ZodTypeAny): Promise<T> {
-  const res = await fetch(`${BASE}${normalizePath(path)}`, {
-    method: "PUT",
-    headers: baseHeaders(true),
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return schema ? parseJson<T>(res, schema) : ((await res.json()) as T);
-}
-
-export async function patch<T = unknown>(path: string, body?: any, schema?: ZodTypeAny): Promise<T> {
-  const res = await fetch(`${BASE}${normalizePath(path)}`, {
-    method: "PATCH",
-    headers: baseHeaders(true),
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return schema ? parseJson<T>(res, schema) : ((await res.json()) as T);
-}
-
-/** Global queryFn for TanStack Query. Expects queryKey[0] to be an API path string. */
+/** TanStack Query global fn (queryKey[0] must be string path) */
 export async function queryFn<T = unknown>({ queryKey }: { queryKey: any }): Promise<T> {
   const [path] = queryKey as [string, any?];
   if (typeof path !== "string") throw new Error("First queryKey entry must be a string path.");
   return api<T>(path);
 }
 
-/* ----------------------------------------------------------------------------
- * Domain models (tolerant of DB vs in-memory shapes)
- * --------------------------------------------------------------------------*/
+/* -------------------------------------------------------------------------- */
+/* types used by UI                                                           */
+/* -------------------------------------------------------------------------- */
 export type DraftChannel = "EMAIL" | "SMS" | "email" | "sms";
 export type DraftStatusUI = "DRAFT" | "SENT" | "FAILED" | "PENDING";
 export type DraftKind = "tenant_reply" | "vendor_outreach" | string;
@@ -94,11 +58,11 @@ export type Draft = {
   id: string;
   requestId: string;
   kind?: DraftKind;
-  channel: DraftChannel; // normalized to "EMAIL" | "SMS" by adapter below
+  channel: DraftChannel;
   to: string;
-  subject?: string;
+  subject?: string | null;
   body: string;
-  status: DraftStatusUI; // normalized to "DRAFT" | "SENT" | "FAILED"
+  status: DraftStatusUI;
   createdAt: string;
   updatedAt?: string;
 };
@@ -110,7 +74,6 @@ export type RequestLite = {
   propertyId?: string;
   status?: string;
   createdAt?: string;
-  // mock-only fields (from routes.ts)
   tenantName?: string;
   property?: string;
   category?: "Plumbing" | "Electrical" | "HVAC" | "Noise" | "Other";
@@ -143,9 +106,9 @@ export type SlaAlert = {
   hoursLeft: number;
 };
 
-/* ----------------------------------------------------------------------------
- * Adapters (Requests, Drafts, Vendors, Dashboard, Agent, Jobs, Compose)
- * --------------------------------------------------------------------------*/
+/* -------------------------------------------------------------------------- */
+/* adapters (requests/drafts/vendors/dashboard/agent/jobs/compose)            */
+/* -------------------------------------------------------------------------- */
 
 // Requests
 export async function apiListRequests(): Promise<RequestLite[]> {
@@ -156,18 +119,20 @@ export async function apiListRequests(): Promise<RequestLite[]> {
 export async function apiListDrafts(): Promise<Draft[]> {
   const rows = await get<any[]>("/drafts");
   return rows.map((d) => {
-    const ch = (d.channel ?? "").toString().toUpperCase();
-    const st = (d.status ?? "").toString().toUpperCase();
+    const ch = String(d.channel ?? "").toUpperCase();
+    const st = String(d.status ?? "").toUpperCase();
     return {
       ...d,
-      channel: ch === "EMAIL" || ch === "SMS" ? ch : (ch === "E" ? "EMAIL" : "SMS"),
-      status: st === "SENT" || st === "FAILED" ? st : "DRAFT",
+      channel: ch === "EMAIL" || ch === "SMS" ? ch : ("EMAIL" as DraftChannel),
+      status: st === "SENT" || st === "FAILED" ? st : ("DRAFT" as DraftStatusUI),
       createdAt: d.createdAt ?? new Date().toISOString(),
     } as Draft;
   });
 }
+// some parts of the UI import this name; make it available
+export const apiListAgentDrafts = apiListDrafts;
 
-// Run agent (supports mode)
+// Run agent (default BOTH so the single Run button keeps behavior)
 export async function apiRunAgent(
   requestId: string,
   mode: "tenant_update" | "vendor_outreach" | "both" = "both"
@@ -175,19 +140,17 @@ export async function apiRunAgent(
   return post("/agent/run", { requestId, mode });
 }
 
-// Approve & send a draft
-export async function apiApproveDraft(
-  draftId: string
-): Promise<{ ok: boolean } | { ok: true; sent: true }> {
+// Approve & send
+export async function apiApproveDraft(draftId: string): Promise<{ ok: boolean } | { ok: true; sent: true }> {
   return post(`/agent/drafts/${draftId}/approve`);
 }
 
-// Assign vendor to request
+// Assign vendor
 export async function apiAssignVendor(
   requestId: string,
   vendorId: string,
   note?: string
-): Promise<{ ok: boolean; requestId?: string; vendorId?: string; result?: any; job?: any }> {
+): Promise<{ ok: boolean; requestId?: string; vendorId?: string; job?: any; result?: any }> {
   return post(`/requests/${requestId}/assign-vendor`, { vendorId, note });
 }
 
@@ -196,7 +159,7 @@ export async function apiListVendors(): Promise<Vendor[]> {
   return get<Vendor[]>("/vendors");
 }
 
-// Dashboard / analytics
+// Dashboard
 export async function apiDashboardStats(): Promise<DashboardStats> {
   return get<DashboardStats>("/dashboard/stats");
 }
@@ -211,12 +174,8 @@ export async function apiCategoryDistribution(): Promise<Array<{ category: strin
 }
 
 /* ------------------------------- Vendor Jobs ------------------------------- */
-export async function apiListVendorJobs(): Promise<any[]> {
-  return get<any[]>("/vendor-jobs");
-}
-// wrapper (avoids curly-brace re-export that broke your build)
 export async function apiVendorJobs(): Promise<any[]> {
-  return apiListVendorJobs();
+  return get<any[]>("/vendor-jobs");
 }
 export async function apiJobProgress(id: string, note?: string) {
   return post(`/jobs/${id}/progress`, { note });
@@ -228,21 +187,15 @@ export async function apiJobComplete(id: string, note?: string) {
 /* --------------------------------- Compose -------------------------------- */
 export async function apiComposeMessage(input: {
   target: "tenant" | "vendor";
-  request: {
-    id: string;
-    summary: string;
-    category?: string;
-    priority?: string;
-    property?: string;
-  };
+  request: { id: string; summary: string; category?: string; priority?: string; property?: string };
   tone?: "neutral" | "friendly" | "firm";
 }): Promise<{ subject: string; body: string }> {
   return post("/compose/message", input);
 }
 
-/* ----------------------------------------------------------------------------
- * internals
- * --------------------------------------------------------------------------*/
+/* -------------------------------------------------------------------------- */
+/* internals                                                                  */
+/* -------------------------------------------------------------------------- */
 function normalizePath(p: string): string {
   return p.startsWith("/") ? p : `/${p}`;
 }
