@@ -287,10 +287,6 @@ router.post("/agent/run", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 router.get("/agent/drafts", (req, res) => {
   try {
