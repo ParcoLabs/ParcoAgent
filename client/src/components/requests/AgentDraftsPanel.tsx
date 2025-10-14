@@ -17,18 +17,23 @@ export default function AgentDraftsPanel({ requestId }: { requestId: string }) {
 
   async function loadDrafts() {
     setLoading(true);
+    console.log("[AgentDrafts] Loading drafts for request:", requestId);
     const res = await fetch(`/api/agent/drafts?requestId=${requestId}`);
     const data = await res.json();
+    console.log("[AgentDrafts] Loaded drafts:", data);
     setDrafts(data.drafts || []);
     setLoading(false);
   }
 
   async function runAgent() {
-    await fetch("/api/agent/run", {
+    console.log("[AgentDrafts] Running agent for request:", requestId);
+    const response = await fetch("/api/agent/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ requestId }),
     });
+    const result = await response.json();
+    console.log("[AgentDrafts] Agent run result:", result);
     await loadDrafts();
   }
 

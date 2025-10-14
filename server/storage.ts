@@ -213,7 +213,7 @@ export function addAgentRun(run: Omit<AgentRun, "id" | "createdAt">): AgentRun {
 }
 
 export function getAgentDraftById(id: string): AgentDraft | undefined {
-  return AGENT_DRAFTS.find((d) => d.id === id);
+  return agentDraftsStore.find((d) => d.id === id);
 }
 // (Optional) expose stores for debugging/dev tools
 export const __agentDraftsStore = agentDraftsStore;
