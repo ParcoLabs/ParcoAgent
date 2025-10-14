@@ -1,5 +1,14 @@
 // server/index.ts
 import "dotenv/config";
+
+// Enable OpenAI if the integration is available
+if (process.env.AI_INTEGRATIONS_OPENAI_API_KEY && process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
+  process.env.USE_REAL_OPENAI = "true";
+  console.log("[OpenAI] Replit AI Integration detected - OpenAI enabled");
+} else {
+  console.log("[OpenAI] No AI Integration detected - using mock responses");
+}
+
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
