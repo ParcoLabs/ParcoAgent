@@ -1,9 +1,7 @@
 // server/agent.ts
-import { db } from "./storage";
-import { requests as requestsTable } from "./storage";
-import { vendors } from "./storage"; // kept in case you use later context
-import { agentDrafts, agentRuns } from "./storage";
+import { addAgentDraft, addAgentRun } from "./storage.js";
 import { nanoid } from "nanoid";
+import OpenAI from "openai";
 
 // -------------------------------------------
 // ID helper
@@ -11,85 +9,226 @@ import { nanoid } from "nanoid";
 const genId = () => nanoid(21);
 
 // -------------------------------------------
-// LLM mock (unchanged)
-//
-// Later, swap this for OpenAI/Anthropic, etc.
+// OpenAI Configuration using Replit AI Integrations
+// -------------------------------------------
+const USE_REAL_OPENAI = process.env.USE_REAL_OPENAI === "true";
+
+// Initialize OpenAI client with Replit AI Integrations endpoint
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "dummy-key",
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined,
+});
+
+// -------------------------------------------
+// OpenAI-powered LLM function
+// -------------------------------------------
+async function callOpenAI(input: { subject?: string | null; body?: string | null; propertyInfo?: string }) {
+  const requestText = `${input.subject || ""} ${input.body || ""}`;
+  const propertyInfo = input.propertyInfo || "Property details not available";
+  
+  const systemPrompt = `You are a helpful property management assistant. Analyze the maintenance request and generate appropriate responses.
+  
+  Return your response as a JSON object with this structure:
+  {
+    "summary": "Brief summary of the issue",
+    "category": "plumbing|electrical|hvac|appliance|structural|pest|landscaping|other",
+    "priority": "low|normal|high|urgent",
+    "drafts": [
+      {
+        "kind": "tenant_reply",
+        "channel": "email",
+        "to": "tenant@example.com",
+        "subject": "Subject line",
+        "body": "Email body - be professional and reassuring"
+      },
+      {
+        "kind": "vendor_outreach", 
+        "channel": "email",
+        "to": "vendor@example.com",
+        "subject": "Subject line",
+        "body": "Email body - be clear about the issue and request availability"
+      }
+    ]
+  }`;
+
+  const userPrompt = `Maintenance Request:
+Subject: ${input.subject || "No subject"}
+Body: ${input.body || "No body"}
+Property Info: ${propertyInfo}
+
+Please analyze this request and generate appropriate draft responses.`;
+
+  try {
+    console.log("[OpenAI] Calling real OpenAI API via Replit AI Integrations...");
+    
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-mini", // Using a model supported by Replit AI Integrations
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 1000,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+    if (!response) {
+      throw new Error("No response from OpenAI");
+    }
+
+    const result = JSON.parse(response);
+    console.log("[OpenAI] Successfully generated response using real OpenAI");
+    
+    // Return the tokens used for logging
+    return {
+      ...result,
+      tokensUsed: {
+        input: completion.usage?.prompt_tokens || 0,
+        output: completion.usage?.completion_tokens || 0,
+      }
+    };
+  } catch (error) {
+    console.error("[OpenAI] Error calling OpenAI:", error);
+    throw error;
+  }
+}
+
+// -------------------------------------------
+// Mock LLM (fallback)
 // -------------------------------------------
 async function callLLMMock(input: { subject?: string | null; body?: string | null }) {
+  console.log("[Mock] Using mock LLM response generator");
+  
   const text = `${input.subject || ""} ${input.body || ""}`.toLowerCase();
   const isPlumbing = text.includes("leak") || text.includes("faucet") || text.includes("water");
-  const category = isPlumbing ? "plumbing" : "other";
-  const summary = isPlumbing
-    ? "Tenant reports a possible plumbing issue (leak/faucet)."
-    : "New request received.";
+  const isHVAC = text.includes("ac") || text.includes("heating") || text.includes("air") || text.includes("temperature");
+  const isElectrical = text.includes("outlet") || text.includes("switch") || text.includes("light") || text.includes("power");
+  
+  let category = "other";
+  let priority = "low";
+  let summary = "New maintenance request received.";
+  
+  if (isPlumbing) {
+    category = "plumbing";
+    priority = text.includes("flood") || text.includes("burst") ? "urgent" : "normal";
+    summary = "Tenant reports a plumbing issue.";
+  } else if (isHVAC) {
+    category = "hvac";
+    priority = text.includes("no heat") || text.includes("no cooling") ? "high" : "normal";
+    summary = "Tenant reports HVAC issue.";
+  } else if (isElectrical) {
+    category = "electrical";
+    priority = text.includes("sparks") || text.includes("burning") ? "urgent" : "normal";
+    summary = "Tenant reports electrical issue.";
+  }
 
   return {
     summary,
     category,
-    priority: isPlumbing ? "normal" : "low",
+    priority,
     drafts: [
       {
         kind: "tenant_reply",
         channel: "email",
         to: "tenant@example.com",
-        subject: "We’re on it",
+        subject: "We're on it - " + category.charAt(0).toUpperCase() + category.slice(1) + " Issue",
         body:
-          "Thanks for reporting this. We’ll arrange a vendor visit and follow up with you on timing. Reply here if anything changes.",
+          "Thanks for reporting this " + category + " issue. We've logged your request and will arrange for a qualified vendor to address it. We'll follow up with you on timing. Please reply here if anything changes or if the situation becomes more urgent.",
       },
       {
         kind: "vendor_outreach",
         channel: "email",
-        to: "plumber@example.com",
-        subject: "Service Request",
+        to: category + "_vendor@example.com",
+        subject: "Service Request - " + priority.charAt(0).toUpperCase() + priority.slice(1) + " Priority",
         body:
-          "Leak reported at Unit 3B. Please confirm availability tomorrow 10–12. Reply to confirm.",
+          category.charAt(0).toUpperCase() + category.slice(1) + " issue reported at Unit 3B. Priority: " + priority + ". Please confirm availability for inspection and repair. Reply to confirm your earliest available time slot.",
       },
     ],
+    tokensUsed: {
+      input: 0,
+      output: 0,
+    }
   };
 }
 
 // -------------------------------------------
-// Exported: runAgentForRequest (unchanged)
+// Exported: runAgentForRequest (simplified for in-memory storage)
 // -------------------------------------------
-export async function runAgentForRequest(requestId: string) {
-  // Load the request
-  const reqRows = await db
-    .select()
-    .from(requestsTable)
-    .where((f, { eq }) => eq(f.id, requestId));
+export async function runAgentForRequest(requestId: string, requestData?: { subject?: string | null; body?: string | null }) {
+  let result;
+  let model = "mock";
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let status: "success" | "error" | "fallback" = "success";
+  let errorMessage: string | null = null;
 
-  const req = reqRows[0];
-  if (!req) return;
+  try {
+    // Log which method we're using
+    if (USE_REAL_OPENAI) {
+      console.log(`[Agent] Running agent for request ${requestId} using REAL OpenAI via Replit AI Integrations`);
+      result = await callOpenAI({ 
+        subject: requestData?.subject, 
+        body: requestData?.body,
+        propertyInfo: `Request ID: ${requestId}` 
+      });
+      model = "openai-gpt-4.1-mini";
+      tokensIn = result.tokensUsed?.input || 0;
+      tokensOut = result.tokensUsed?.output || 0;
+    } else {
+      console.log(`[Agent] Running agent for request ${requestId} using MOCK LLM (set USE_REAL_OPENAI=true to use OpenAI)`);
+      result = await callLLMMock({ subject: requestData?.subject, body: requestData?.body });
+      model = "mock";
+    }
+  } catch (error: any) {
+    console.error(`[Agent] Error processing request ${requestId}:`, error);
+    
+    // Fallback to mock if OpenAI fails
+    console.log(`[Agent] Falling back to mock LLM due to error`);
+    result = await callLLMMock({ subject: requestData?.subject, body: requestData?.body });
+    model = "mock-fallback";
+    status = "error";
+    errorMessage = error.message || "Unknown error";
+  }
 
-  // record agent run
-  await db.insert(agentRuns).values({
-    id: genId(),
+  // Record agent run with detailed information
+  addAgentRun({
     requestId,
-    status: "success",
-    model: "mock",
-    tokensIn: "0",
-    tokensOut: "0",
+    status: status === "fallback" ? "error" : status,
+    model,
+    tokensIn,
+    tokensOut,
+    error: errorMessage,
   });
 
-  const result = await callLLMMock({ subject: req.subject, body: req.body });
+  // Log the result
+  console.log(`[Agent] Generated ${result.drafts.length} drafts using ${model}`);
+  console.log(`[Agent] Category: ${result.category}, Priority: ${result.priority}`);
+  if (tokensIn > 0) {
+    console.log(`[Agent] Tokens used - Input: ${tokensIn}, Output: ${tokensOut}`);
+  }
 
+  // Store the drafts
   for (const d of result.drafts) {
-    await db.insert(agentDrafts).values({
-      id: genId(),
+    addAgentDraft({
       requestId,
       kind: d.kind as "tenant_reply" | "vendor_outreach",
       channel: d.channel as "email" | "sms",
       to: d.to,
       subject: d.subject || null,
       body: d.body,
-      status: "draft",
+      vendorId: null,
       metadata: {
         summary: result.summary,
         category: result.category,
         priority: result.priority,
+        model: model,
+        generated_by: USE_REAL_OPENAI ? "OpenAI" : "Mock",
       },
     });
   }
+  
+  return result;
 }
 
 // -------------------------------------------
