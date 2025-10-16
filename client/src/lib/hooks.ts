@@ -19,6 +19,14 @@ import {
   apiListVendorJobs,
   apiJobProgress,
   apiJobComplete,
+
+  // Properties
+  apiListProperties,
+  apiCreateProperty,
+  apiUpdateProperty,
+
+  // 🆕 Demo Reset
+  apiDemoReset,
 } from "@/lib/api";
 
 /* -------------------------------- Requests -------------------------------- */
@@ -34,7 +42,6 @@ export function useDrafts() {
   return useQuery({
     queryKey: ["/drafts"],
     queryFn: apiListDrafts,
-    // drafts can change after approvals; lightweight polling is fine for demo
     refetchInterval: 5000,
   });
 }
@@ -50,7 +57,6 @@ export function useRunAgent() {
       mode: "tenant_update" | "vendor_outreach" | "both";
     }) => apiRunAgent(requestId, mode),
     onSuccess: () => {
-      // Agent creates drafts
       qc.invalidateQueries({ queryKey: ["/drafts"] });
     },
   });
@@ -61,7 +67,6 @@ export function useApproveDraft() {
   return useMutation({
     mutationFn: (draftId: string) => apiApproveDraft(draftId),
     onSuccess: () => {
-      // Status flips to SENT/FAILED
       qc.invalidateQueries({ queryKey: ["/drafts"] });
     },
   });
@@ -81,9 +86,9 @@ export function useAssignVendor() {
       note?: string;
     }) => apiAssignVendor(requestId, vendorId, note),
     onSuccess: () => {
-      // Reflect vendor link in requests list/detail and vendor jobs
       qc.invalidateQueries({ queryKey: ["/requests"] });
       qc.invalidateQueries({ queryKey: ["/vendor-jobs"] });
+      qc.refetchQueries({ queryKey: ["/vendor-jobs"], type: "active" });
     },
   });
 }
@@ -94,6 +99,56 @@ export function useVendors() {
     queryKey: ["/vendors"],
     queryFn: apiListVendors,
     staleTime: 60_000,
+  });
+}
+
+/* ------------------------------ Properties -------------------------------- */
+/** IMPORTANT: canonical key uses '/api/properties' to match older components */
+const PROPS_KEYS = {
+  canonical: "/api/properties",
+  legacy: "/properties",
+};
+
+export function useProperties() {
+  return useQuery({
+    queryKey: [PROPS_KEYS.canonical],
+    queryFn: apiListProperties,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateProperty() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; address?: string | null }) =>
+      apiCreateProperty(input),
+    onSuccess: () => {
+      // Invalidate both the new and legacy keys
+      qc.invalidateQueries({ queryKey: [PROPS_KEYS.canonical] });
+      qc.invalidateQueries({ queryKey: [PROPS_KEYS.legacy] });
+      // Force immediate refetch of any mounted lists
+      qc.refetchQueries({ queryKey: [PROPS_KEYS.canonical], type: "active" });
+      qc.refetchQueries({ queryKey: [PROPS_KEYS.legacy], type: "active" });
+    },
+  });
+}
+
+export function useUpdateProperty() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      patch,
+    }: {
+      id: string;
+      patch: { name?: string | null; address?: string | null };
+    }) => apiUpdateProperty(id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [PROPS_KEYS.canonical] });
+      qc.invalidateQueries({ queryKey: [PROPS_KEYS.legacy] });
+      qc.refetchQueries({ queryKey: [PROPS_KEYS.canonical], type: "active" });
+      qc.refetchQueries({ queryKey: [PROPS_KEYS.legacy], type: "active" });
+    },
   });
 }
 
@@ -135,9 +190,10 @@ export function useVendorJobs() {
   return useQuery({
     queryKey: ["/vendor-jobs"],
     queryFn: apiListVendorJobs,
-    // Always hand back an array so UI never maps undefined
-    select: (data) => (Array.isArray(data) ? data : [] as any[]),
-    // jobs update when assignments/progress/completions happen
+    select: (data) => (Array.isArray(data) ? data : ([] as any[])),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     refetchInterval: 5000,
   });
 }
@@ -149,6 +205,7 @@ export function useJobProgress() {
       apiJobProgress(id, note),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/vendor-jobs"] });
+      qc.refetchQueries({ queryKey: ["/vendor-jobs"], type: "active" });
     },
   });
 }
@@ -160,6 +217,26 @@ export function useJobComplete() {
       apiJobComplete(id, note),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/vendor-jobs"] });
+      qc.refetchQueries({ queryKey: ["/vendor-jobs"], type: "active" });
+    },
+  });
+}
+
+/* ------------------------------- Demo Reset ------------------------------- */
+export function useDemoReset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiDemoReset(),
+    onSuccess: () => {
+      // Refresh the core lists after reset
+      qc.invalidateQueries({ queryKey: [PROPS_KEYS.canonical] });
+      qc.invalidateQueries({ queryKey: [PROPS_KEYS.legacy] });
+      qc.invalidateQueries({ queryKey: ["/requests"] });
+      qc.invalidateQueries({ queryKey: ["/vendor-jobs"] });
+      qc.invalidateQueries({ queryKey: ["/vendors"] });
+      qc.invalidateQueries({ queryKey: ["/notifications"] });
+
+      qc.refetchQueries({ type: "active" });
     },
   });
 }

@@ -12,6 +12,9 @@ import {
 } from "@/components/settings";
 import { getInitialSetupDone, setInitialSetupDone } from "@/lib/onboarding";
 
+// 🆕 hooks to create property and reset demo (handles cache invalidation)
+import { useCreateProperty, useDemoReset } from "@/lib/hooks";
+
 type SectionKey =
   | "profile"
   | "property"
@@ -35,10 +38,40 @@ export default function Settings() {
   const isFirstTime = useMemo(() => !getInitialSetupDone(), []);
   const [active, setActive] = useState<SectionKey>("profile");
 
+  // 🆕 create + demo reset hooks
+  const createProperty = useCreateProperty();
+  const demoReset = useDemoReset();
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
   function handleFinishInitial() {
     setInitialSetupDone(true);
     alert("Setup saved. You can edit these anytime in Settings.");
   }
+
+  // 🆕 demo reset via hook so properties/requests/jobs UI refresh
+  function handleDemoReset() {
+    setResetMsg(null);
+    demoReset.mutate(undefined, {
+      onSuccess: (res) => {
+        setResetMsg("Demo data reset. Requests, jobs, and properties restored to seed.");
+      },
+      onError: (e: any) => setResetMsg(e?.message || "Reset failed."),
+    });
+  }
+
+  // 🆕 optional: if PropertyForm exposes an onCreate prop, this wires it
+  const handlePropertyCreate = (vals: { name?: string; address?: string }) => {
+    const name = (vals?.name || "").trim();
+    if (!name) return;
+    createProperty.mutate(
+      { name, address: (vals?.address || "").trim() || undefined },
+      {
+        onSuccess: () => {
+          // nothing else; hooks invalidate and refetch properties lists
+        },
+      }
+    );
+  };
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -84,7 +117,8 @@ export default function Settings() {
 
         {active === "property" && (
           <SectionCard title="First Property" hint="Name, address, unit info and rent cycle">
-            <PropertyForm />
+            {/* If PropertyForm supports it, this will create a row in /properties */}
+            <PropertyForm onCreate={handlePropertyCreate} />
           </SectionCard>
         )}
 
@@ -117,6 +151,20 @@ export default function Settings() {
             <RentForm />
           </SectionCard>
         )}
+
+        {/* Demo Utilities */}
+        <SectionCard title="Demo Utilities" hint="Reset demo data to the initial seed (requests, jobs, drafts).">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleDemoReset}
+              disabled={demoReset.isLoading}
+              className="px-4 py-2 rounded-xl border bg-white hover:bg-gray-50 text-sm"
+            >
+              {demoReset.isLoading ? "Resetting…" : "Demo Reset"}
+            </button>
+            {resetMsg && <div className="text-sm text-gray-700">{resetMsg}</div>}
+          </div>
+        </SectionCard>
       </div>
     </div>
   );

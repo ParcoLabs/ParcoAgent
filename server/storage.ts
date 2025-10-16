@@ -108,7 +108,7 @@ const agentDraftsStore: AgentDraft[] = [];
 const agentRunsStore: AgentRun[] = [];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Accessors you already had
+/** Accessors you already had */
 // ─────────────────────────────────────────────────────────────────────────────
 export function getSettings(): Settings {
   return store;
@@ -215,6 +215,16 @@ export function addAgentRun(run: Omit<AgentRun, "id" | "createdAt">): AgentRun {
 export function getAgentDraftById(id: string): AgentDraft | undefined {
   return agentDraftsStore.find((d) => d.id === id);
 }
+
 // (Optional) expose stores for debugging/dev tools
 export const __agentDraftsStore = agentDraftsStore;
 export const __agentRunsStore = agentRunsStore;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: reset for Demo Reset endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+export function resetAgentStorage() {
+  agentDraftsStore.length = 0;
+  agentRunsStore.length = 0;
+  return { drafts: 0, runs: 0 };
+}

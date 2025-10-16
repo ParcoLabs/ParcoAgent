@@ -143,6 +143,19 @@ export type SlaAlert = {
   hoursLeft: number;
 };
 
+/** 🆕 Job type for /jobs endpoints */
+export type Job = {
+  id: string;
+  requestId: string;
+  vendorId: string;
+  status: "pending" | "in_progress" | "completed";
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  lastMessageAt?: string | null;
+  notes?: string[];
+};
+
 /* ----------------------------------------------------------------------------
  * Adapters (Requests, Drafts, Vendors, Dashboard, Agent, Jobs, Compose)
  * --------------------------------------------------------------------------*/
@@ -225,6 +238,15 @@ export async function apiJobComplete(id: string, note?: string) {
   return post(`/jobs/${id}/complete`, { note });
 }
 
+/** 🆕 General Jobs list with optional filters vendorId/requestId */
+export async function apiListJobs(filters?: { vendorId?: string; requestId?: string }): Promise<Job[]> {
+  const params = new URLSearchParams();
+  if (filters?.vendorId) params.set("vendorId", filters.vendorId);
+  if (filters?.requestId) params.set("requestId", filters.requestId);
+  const qs = params.toString();
+  return get<Job[]>(`/jobs${qs ? `?${qs}` : ""}`);
+}
+
 /* --------------------------------- Compose -------------------------------- */
 export async function apiComposeMessage(input: {
   target: "tenant" | "vendor";
@@ -265,4 +287,35 @@ function baseHeaders(withJson = false): Record<string, string> {
     ...(withJson ? { "Content-Type": "application/json" } : {}),
     ...(import.meta.env.VITE_API_KEY ? { "x-api-key": String(import.meta.env.VITE_API_KEY) } : {}),
   };
+}
+
+// --- Properties API ---
+export type Property = {
+  id: string;
+  name: string;
+  address?: string | null;
+  // optional stats used by your list UI
+  units?: number;
+  occ?: number;      // integer percent (e.g., 92)
+  noiTtm?: number;   // number in dollars
+};
+
+export async function apiListProperties(): Promise<Property[]> {
+  return get<Property[]>("/properties");
+}
+
+export async function apiCreateProperty(input: { name: string; address?: string | null }): Promise<{ ok: true; property: Property }> {
+  return post<{ ok: true; property: Property }>("/properties", input);
+}
+
+export async function apiUpdateProperty(
+  id: string,
+  patch: { name?: string | null; address?: string | null }
+): Promise<{ ok: true; property: Property }> {
+  return put<{ ok: true; property: Property }>(`/properties/${id}`, patch);
+}
+
+/* 🆕 Demo Reset */
+export async function apiDemoReset(): Promise<{ ok: true; requests: number; jobs: number; properties: number }> {
+  return post("/admin/reset");
 }

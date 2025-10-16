@@ -1,13 +1,17 @@
-// server/db/client.ts
-import { PrismaClient } from "@prisma/client";
-const g = globalThis as unknown as { prisma?: PrismaClient };
+import fs from "fs";
+import path from "path";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 
-export const prisma =
-  g.prisma ??
-  new PrismaClient({
-    log: ["warn", "error"],
-  });
+const DB_PATH = process.env.DATABASE_URL?.trim() || "./data/app.db";
 
-if (process.env.NODE_ENV !== "production") {
-  g.prisma = prisma;
+// ensure folder exists
+const abs = path.resolve(process.cwd(), DB_PATH);
+fs.mkdirSync(path.dirname(abs), { recursive: true });
+
+export const sqlite = new Database(abs);
+export const db = drizzle(sqlite);
+
+export function exec(sql: string) {
+  try { sqlite.exec(sql); } catch {}
 }
