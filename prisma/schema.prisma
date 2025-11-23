@@ -1,10 +1,11 @@
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = env("SQLITE_URL")
 }
 
 enum Role {
@@ -42,7 +43,7 @@ model User {
   email     String   @unique
   name      String
   role      Role
-  phone     String?  @db.VarChar(32)
+  phone     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -74,10 +75,12 @@ model Vendor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  owner   User?   @relation("VendorUser", fields: [ownerId], references: [id])
-  ownerId String?
+  owner     User?     @relation("VendorUser", fields: [ownerId], references: [id])
+  ownerId   String?
 
-  messages Message[]
+  messages  Message[]
+  prospects Prospect[]
+  jobs      Job[]
 }
 
 model Request {
@@ -97,6 +100,9 @@ model Request {
   drafts        Draft[]
   notes         AuditLog[]
   notifications Notification[]
+
+  prospects     Prospect[]
+  jobs          Job[]
 }
 
 model Draft {
@@ -126,10 +132,10 @@ model Message {
   sentAt            DateTime?
   createdAt         DateTime      @default(now())
 
-  draft   Draft?   @relation(fields: [draftId], references: [id])
-  draftId String?  @unique
+  draft    Draft?   @relation(fields: [draftId], references: [id])
+  draftId  String?  @unique
 
-  vendor  Vendor?  @relation(fields: [vendorId], references: [id])
+  vendor   Vendor?  @relation(fields: [vendorId], references: [id])
   vendorId String?
 }
 
@@ -164,4 +170,37 @@ model AuditLog {
 
   request   Request? @relation(fields: [requestId], references: [id])
   requestId String?
+}
+
+/* ---------------------- NEW: Persisted Prospects & Jobs -------------------- */
+
+model Prospect {
+  id            String   @id @default(cuid())
+  status        String   @default("pending") // "pending" | "approved" | "rejected"
+  estimatedCost Int?
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  request   Request @relation(fields: [requestId], references: [id])
+  requestId String
+
+  vendor    Vendor  @relation(fields: [vendorId], references: [id])
+  vendorId  String
+}
+
+model Job {
+  id          String   @id @default(cuid())
+  status      String   @default("pending") // "pending" | "in_progress" | "completed"
+  notes       Json?                      // string[]
+  proofUrls   Json?                      // string[]
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  request   Request @relation(fields: [requestId], references: [id])
+  requestId String
+
+  vendor    Vendor  @relation(fields: [vendorId], references: [id])
+  vendorId  String
 }

@@ -1,68 +1,147 @@
 // client/src/lib/vendors.hooks.ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as api from "./vendors.api";
-import type { VendorCategory, VendorStatus } from "@/types/vendors";
+import {
+  apiListVendors,
+  apiListVendorJobs,
+  apiJobProgress,
+  apiJobComplete,
+  apiVendorProspects,
+  apiApproveProspect as apiApproveProspectCall,
+  apiAgentExecute,
+} from "@/lib/api";
 
-/** List vendors with filters/pagination */
-export function useVendors(params: api.ListParams) {
-  return useQuery<Awaited<ReturnType<typeof api.fetchVendors>>>({
-    queryKey: ["vendors", params],
-    queryFn: () => api.fetchVendors(params),
-    staleTime: 60_000,        // cache vendor lists for 1 minute
-    keepPreviousData: true,   // keep previous list while params change
-  });
-}
-
-/** Single vendor detail */
-export function useVendor(id?: string) {
-  return useQuery<Awaited<ReturnType<typeof api.fetchVendor>> | null>({
-    queryKey: ["vendor", id],
-    queryFn: () => (id ? api.fetchVendor(id) : Promise.resolve(null)),
-    enabled: !!id,
-    staleTime: 60_000,
-  });
-}
-
-/** Request bids from vendors */
-export function useRequestBids() {
-  return useMutation({
-    mutationFn: api.requestBids,
-  });
-}
-
-/** Approve a bid and refresh vendor lists */
-export function useApproveBid() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: api.approveBid,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["vendors"] });
+/* --------------------------- internal utils ------------------------------- */
+function invalidateBySubstring(qc: ReturnType<typeof useQueryClient>, parts: string[]) {
+  qc.invalidateQueries({
+    predicate: (q) => {
+      const key = Array.isArray(q.queryKey) ? q.queryKey : [q.queryKey as any];
+      const flat = key.map((k) => (typeof k === "string" ? k : JSON.stringify(k))).join(" ");
+      return parts.some((p) => flat.includes(p));
     },
   });
 }
 
-/** Ask a vendor for compliance documents */
-export function useRequestComplianceDocs() {
-  return useMutation({
-    mutationFn: api.requestComplianceDocs,
+/* -------------------------------- Vendors --------------------------------- */
+export function useVendors() {
+  return useQuery({ queryKey: ["/vendors"], queryFn: apiListVendors, staleTime: 60_000 });
+}
+
+/* ------------------------------ Vendor Jobs ------------------------------- */
+export function useVendorJobs() {
+  return useQuery({
+    queryKey: ["/vendor-jobs"],
+    queryFn: apiListVendorJobs,
+    select: (data) => (Array.isArray(data) ? data : ([] as any[])),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 5000,
   });
 }
 
-/** Approve a vendor invoice */
-export function useApproveInvoice() {
+export function useJobProgress() {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.approveInvoice,
+    mutationFn: ({ id, note }: { id: string; note?: string }) => apiJobProgress(id, note),
+    onSuccess: () => {
+      invalidateBySubstring(qc, ["/vendor-jobs", "vendor-jobs", "/audit", "audit"]);
+      qc.refetchQueries({ queryKey: ["/vendor-jobs"], type: "active" });
+    },
   });
 }
 
-/** Dispute a vendor invoice */
-export function useDisputeInvoice() {
+export function useJobComplete() {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.disputeInvoice,
+    mutationFn: ({ id, note }: { id: string; note?: string }) => apiJobComplete(id, note),
+    onSuccess: () => {
+      invalidateBySubstring(qc, ["/vendor-jobs", "vendor-jobs", "/audit", "audit"]);
+      qc.refetchQueries({ queryKey: ["/vendor-jobs"], type: "active" });
+    },
   });
 }
 
-/* small re-exports to match your existing API */
-export type ListParams = api.ListParams;
-export type CategoryFilter = VendorCategory | "All";
-export type StatusFilter = VendorStatus | "All";
+/* --------------------------- Prospects (Source 3) ------------------------- */
+export function useVendorProspects() {
+  return useQuery({
+    queryKey: ["/vendor-prospects"],
+    queryFn: apiVendorProspects,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Approve a sourced vendor → creates a Job
+ * Guardrails (enforced server-side, surfaced in onError):
+ *  - require estimate OR overrideReason
+ *  - if estimate > 750, overrideReason is required
+ *  - optional allowDuplicate to create another job for the same vendor+request
+ */
+export function useApproveProspect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      estimate,
+      overrideReason,
+      allowDuplicate,
+    }: {
+      id: string;
+      estimate?: number;
+      overrideReason?: string;
+      allowDuplicate?: boolean;
+    }) =>
+      apiApproveProspectCall(id, {
+        // send only defined fields so Express JSON parser is happy
+        ...(estimate !== undefined ? { estimate } : {}),
+        ...(overrideReason ? { overrideReason } : {}),
+        ...(allowDuplicate !== undefined ? { allowDuplicate } : {}),
+      }),
+    onSuccess: () => {
+      invalidateBySubstring(qc, ["/vendor-prospects", "/vendor-jobs", "vendor-jobs", "/audit"]);
+      qc.refetchQueries({ type: "active" });
+    },
+    // bubble guardrail messages so the UI can toast them
+    onError: (err: any) => {
+      // no invalidation on error; let the caller read err.message/err.data
+      // eslint-disable-next-line no-console
+      console.warn("[useApproveProspect] failed:", err);
+    },
+  });
+}
+
+/* ----------------------- Convenience Agent Actions ------------------------ */
+/** Schedule a vendor visit (adds job.visit, writes audit) */
+export function useScheduleVisit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { jobId: string; when: string; window?: string; note?: string }) =>
+      apiAgentExecute({ action: "schedule-visit", payload }),
+    onSuccess: () => {
+      invalidateBySubstring(qc, ["/vendor-jobs", "vendor-jobs", "/audit", "audit"]);
+      qc.refetchQueries({ type: "active" });
+    },
+  });
+}
+
+/** Send confirmations (email/SMS) for a scheduled visit */
+export function useSendVisitConfirmations() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      jobId: string;
+      tenantEmail?: string | null;
+      vendorEmail?: string | null;
+      tenantPhone?: string | null;
+      vendorPhone?: string | null;
+      channels?: Array<"tenant_email" | "vendor_email" | "tenant_sms" | "vendor_sms">;
+      when?: string;
+      window?: string;
+      note?: string;
+    }) => apiAgentExecute({ action: "send-visit-confirmations", payload }),
+    onSuccess: () => {
+      invalidateBySubstring(qc, ["/audit"]);
+      qc.refetchQueries({ type: "active" });
+    },
+  });
+}

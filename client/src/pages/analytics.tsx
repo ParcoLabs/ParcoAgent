@@ -1,11 +1,10 @@
-// client/src/pages/analytics.tsx
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import Sidebar from "@/components/dashboard/sidebar";
-import FiltersBar from "@/components/analytics/FiltersBar";
+// REPLACED FiltersBar with inline version to control order/labels precisely
 import KPIStrip from "@/components/analytics/KPIStrip";
 import TrendCard from "@/components/analytics/TrendCard";
 import SpendByCategory from "@/components/analytics/SpendByCategory";
@@ -14,10 +13,118 @@ import VendorPerformance from "@/components/analytics/VendorPerformance";
 import AIInsights from "@/components/analytics/AIInsights";
 import type { AnalyticsFilters } from "@/types/analytics";
 
+type Opt = { value: string; label: string };
+
+const ALL: Opt = { value: "all", label: "All" };
+
+function InlineFilters({
+  filters,
+  onChange,
+}: {
+  filters: AnalyticsFilters & {
+    property?: string;
+    requestType?: string;
+    vendor?: string;
+  };
+  onChange: (f: any) => void;
+}) {
+  const propertyOptions: Opt[] = [
+    ALL,
+    { value: "225-pine", label: "225 Pine St" },
+    { value: "456-oak", label: "456 Oak Ave" },
+    { value: "12-maple", label: "12 Maple Ct" },
+  ];
+  const requestTypeOptions: Opt[] = [
+    ALL,
+    { value: "Plumbing", label: "Plumbing" },
+    { value: "Electrical", label: "Electrical" },
+    { value: "HVAC", label: "HVAC" },
+    { value: "Noise", label: "Noise" },
+    { value: "Other", label: "Other" },
+  ];
+  const vendorOptions: Opt[] = [
+    ALL,
+    { value: "V001", label: "AquaFix Pro" },
+    { value: "V002", label: "CoolAir Masters" },
+    { value: "V003", label: "Bright Electric" },
+  ];
+
+  return (
+    <div className="rounded-2xl border bg-white p-3 md:p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Property (FIRST) */}
+        <label className="text-sm">
+          <span className="block text-[12px] text-gray-600 mb-1">Property</span>
+          <select
+            className="w-full rounded-lg border px-3 py-2"
+            value={filters.property ?? "all"}
+            onChange={(e) => onChange({ ...filters, property: e.target.value })}
+          >
+            {propertyOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Request Type */}
+        <label className="text-sm">
+          <span className="block text-[12px] text-gray-600 mb-1">Request Type</span>
+          <select
+            className="w-full rounded-lg border px-3 py-2"
+            value={filters.requestType ?? "all"}
+            onChange={(e) => onChange({ ...filters, requestType: e.target.value })}
+          >
+            {requestTypeOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Vendor */}
+        <label className="text-sm">
+          <span className="block text-[12px] text-gray-600 mb-1">Vendor</span>
+          <select
+            className="w-full rounded-lg border px-3 py-2"
+            value={filters.vendor ?? "all"}
+            onChange={(e) => onChange({ ...filters, vendor: e.target.value })}
+          >
+            {vendorOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Group by */}
+        <label className="text-sm">
+          <span className="block text-[12px] text-gray-600 mb-1">Group by</span>
+          <select
+            className="w-full rounded-lg border px-3 py-2"
+            value={filters.groupBy ?? "month"}
+            onChange={(e) => onChange({ ...filters, groupBy: e.target.value })}
+          >
+            <option value="week">Week</option>
+            <option value="month">Month</option>
+            <option value="quarter">Quarter</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   // default filters: current quarter (simple)
-  const [filters, setFilters] = React.useState<AnalyticsFilters>({
+  const [filters, setFilters] = React.useState<AnalyticsFilters & { property?: string; requestType?: string; vendor?: string }>({
     groupBy: "month",
+    property: "all",
+    requestType: "all",
+    vendor: "all",
   });
 
   // match header behavior from dashboard
@@ -25,7 +132,10 @@ export default function AnalyticsPage() {
   const notificationCount = Array.isArray(notifications) ? notifications.length : 3;
 
   const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 
   return (
@@ -60,13 +170,13 @@ export default function AnalyticsPage() {
 
         {/* Body */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-          {/* Filters */}
-          <FiltersBar filters={filters} onChange={setFilters} />
+          {/* Filters (Property first, labeled) */}
+          <InlineFilters filters={filters} onChange={setFilters} />
 
           {/* KPI strip */}
           <KPIStrip filters={filters} />
 
-          {/* Grid */}
+          {/* Grid — focus on the high-value charts */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
             {/* Left column (2 cols wide) */}
             <div className="xl:col-span-2 space-y-4">

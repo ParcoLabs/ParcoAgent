@@ -1,17 +1,21 @@
-// client/src/pages/properties.tsx
 import * as React from "react";
-import { Bell, Plus, X } from "lucide-react";
+import { Bell, Plus, X, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Sidebar from "@/components/dashboard/sidebar";
 import PropertiesList from "@/components/properties/PropertiesList";
 import PropertyDetailsPane from "@/components/properties/PropertyDetailsPane";
 import type { PropertyRow } from "@/types/properties";
 
-// react-query hooks we already added in hooks.ts
-import { useNotifications, useProperties, useCreateProperty } from "@/lib/hooks";
+import {
+  useNotifications,
+  useProperties,
+  useCreateProperty,
+  useAgentExecute,
+  useCreateRequest, // ✅ create request from selected property
+} from "@/lib/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 
-/* Lightweight inline modal so we don’t touch your component library */
+/* Lightweight inline modal */
 function Modal({
   open,
   onClose,
@@ -42,22 +46,19 @@ function Modal({
 
 export default function PropertiesPage() {
   const qc = useQueryClient();
-
-  // keep your “selection drives detail pane” pattern
   const [selected, setSelected] = React.useState<PropertyRow | null>(null);
 
-  // notifications (use our hook so it hits /notifications)
+  // notifications
   const { data: notifications } = useNotifications();
   const notificationCount = Array.isArray(notifications) ? notifications.length : 0;
 
-  // properties data (list component can still handle selection)
+  // properties
   const { data: properties } = useProperties();
 
-  // create flow
+  // --------------------- Create Property (unchanged) ----------------------
   const [openCreate, setOpenCreate] = React.useState(false);
   const [name, setName] = React.useState("");
   const [address, setAddress] = React.useState("");
-
   const createProperty = useCreateProperty();
 
   async function handleCreate(e: React.FormEvent) {
@@ -68,20 +69,17 @@ export default function PropertiesPage() {
       { name: name.trim(), address: address.trim() || undefined },
       {
         onSuccess: (res) => {
-          // refresh list and close modal
           qc.invalidateQueries({ queryKey: ["/properties"] });
           setOpenCreate(false);
           setName("");
           setAddress("");
 
-          // try to pre-select the created property if it’s in the response
           const prop = (res as any)?.property;
           if (prop) {
             setSelected({
               id: String(prop.id),
               name: prop.name,
               address: prop.address ?? "",
-              // fill any optional fields PropertiesList/Details expect
               units: 0,
               occ: 0,
               noiTtm: 0,
@@ -92,16 +90,100 @@ export default function PropertiesPage() {
     );
   }
 
+  // ---------------------- Publish Notice (unchanged) ----------------------
+  const [openNotice, setOpenNotice] = React.useState(false);
+  const [subject, setSubject] = React.useState("");
+  const [body, setBody] = React.useState("");
+  const execute = useAgentExecute();
+
+  React.useEffect(() => {
+    if (!openNotice || !selected) return;
+    const s = `Notice to Tenants — ${selected.name}`;
+    const b = `Hello residents of ${selected.name},
+
+This is a building notice. Please review the information below:
+
+• Topic: (enter details)
+• Date/Time: (enter details)
+• Impact: (enter details)
+
+Thank you,
+Parco PM Agent`;
+    setSubject(s);
+    setBody(b);
+  }, [openNotice, selected]);
+
+  function openNoticeModal() {
+    if (!selected) return;
+    setOpenNotice(true);
+  }
+
+  async function handlePublish(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+
+    execute.mutate(
+      {
+        action: "publish-tenant-notice",
+        payload: {
+          propertyId: String(selected.id),
+          subject: subject.trim(),
+          body: body.trim(),
+          channel: "EMAIL",
+        },
+      },
+      { onSuccess: () => setOpenNotice(false) }
+    );
+  }
+
+  // -------------------- ✅ New Request for Selected Property --------------------
+  const createRequest = useCreateRequest();
+  const [openNewReq, setOpenNewReq] = React.useState(false);
+  const [nrSummary, setNrSummary] = React.useState("");
+  const [nrCategory, setNrCategory] = React.useState("Other");
+  const [nrPriority, setNrPriority] = React.useState("Medium");
+  const [nrTenant, setNrTenant] = React.useState("");
+
+  function openNewRequestModal() {
+    if (!selected) return;
+    setNrSummary("");
+    setNrCategory("Other");
+    setNrPriority("Medium");
+    setNrTenant("");
+    setOpenNewReq(true);
+  }
+
+  function handleCreateRequest(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+
+    createRequest.mutate(
+      {
+        summary: nrSummary.trim() || "New maintenance request",
+        category: nrCategory,
+        priority: nrPriority,
+        property: selected.name, // server expects NAME string in mock/in-memory mode
+        tenantName: nrTenant.trim() || undefined,
+      },
+      {
+        onSuccess: (res: any) => {
+          setOpenNewReq(false);
+          const id = res?.id || res?.requestId;
+          // Deep-link to Requests so it selects the row (requests.tsx reads ?select=)
+          if (id) window.location.href = `/requests?select=${encodeURIComponent(id)}`;
+          else window.location.href = `/requests`;
+        },
+      }
+    );
+  }
+
   return (
     <div className="flex h-screen bg-gray-50 md:flex-row flex-col">
-      {/* Sidebar like dashboard */}
       <div className="md:block hidden">
         <Sidebar />
       </div>
 
-      {/* Main area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top header (copy of dashboard header with title swapped) */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -129,7 +211,29 @@ export default function PropertiesPage() {
                 )}
               </button>
 
-              {/* Add Property button (kept exactly where you had it) */}
+              {/* Publish Notice */}
+              <Button
+                onClick={openNoticeModal}
+                disabled={!selected}
+                className="bg-blue-700 text-white hover:bg-blue-800 transition-colors flex items-center space-x-2 disabled:opacity-60"
+                title={selected ? "Publish Tenant Notice" : "Select a property first"}
+              >
+                <Megaphone className="w-4 h-4" />
+                <span className="hidden sm:inline">Publish Notice</span>
+              </Button>
+
+              {/* ✅ New Request for this Property */}
+              <Button
+                onClick={openNewRequestModal}
+                disabled={!selected}
+                className="bg-black text-white hover:bg-black/90 transition-colors flex items-center space-x-2 disabled:opacity-60"
+                title={selected ? "Create Request for this Property" : "Select a property first"}
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">New Request</span>
+              </Button>
+
+              {/* Add Property */}
               <Button
                 onClick={() => setOpenCreate(true)}
                 className="bg-green-700 text-white hover:bg-green-800 transition-colors flex items-center space-x-2"
@@ -141,13 +245,10 @@ export default function PropertiesPage() {
           </div>
         </header>
 
-        {/* Body */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* Left: list */}
             <div className="lg:col-span-6 xl:col-span-5">
-              {/* If your PropertiesList already fetches internally, it will ignore the props.
-                  If it accepts them, this lets it render instantly. */}
               <PropertiesList onSelect={setSelected} properties={properties as any} />
             </div>
 
@@ -159,7 +260,7 @@ export default function PropertiesPage() {
         </main>
       </div>
 
-      {/* Create modal */}
+      {/* Add Property modal */}
       <Modal open={openCreate} onClose={() => setOpenCreate(false)} title="Add Property">
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
@@ -184,18 +285,10 @@ export default function PropertiesPage() {
           </div>
 
           <div className="pt-2 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              className="px-3 py-2 rounded-lg border hover:bg-gray-50"
-              onClick={() => setOpenCreate(false)}
-            >
+            <button type="button" className="px-3 py-2 rounded-lg border hover:bg-gray-50" onClick={() => setOpenCreate(false)}>
               Cancel
             </button>
-            <Button
-              type="submit"
-              className="bg-black text-white hover:bg-black/90"
-              disabled={createProperty.isLoading}
-            >
+            <Button type="submit" className="bg-black text-white hover:bg-black/90" disabled={createProperty.isLoading}>
               {createProperty.isLoading ? "Saving..." : "Save Property"}
             </Button>
           </div>
@@ -203,6 +296,114 @@ export default function PropertiesPage() {
           {createProperty.isError && (
             <p className="text-sm text-red-600">
               {(createProperty.error as any)?.message ?? "Failed to create property."}
+            </p>
+          )}
+        </form>
+      </Modal>
+
+      {/* ✅ New Request modal (selected property) */}
+      <Modal open={openNewReq} onClose={() => setOpenNewReq(false)} title="Create Request for This Property">
+        <form onSubmit={handleCreateRequest} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Summary *</label>
+            <input
+              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+              placeholder="e.g., Leak under kitchen sink"
+              value={nrSummary}
+              onChange={(e) => setNrSummary(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Category</label>
+              <select
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                value={nrCategory}
+                onChange={(e) => setNrCategory(e.target.value)}
+              >
+                <option>Plumbing</option>
+                <option>Electrical</option>
+                <option>HVAC</option>
+                <option>Cleaning</option>
+                <option>Noise</option>
+                <option>General</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Priority</label>
+              <select
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                value={nrPriority}
+                onChange={(e) => setNrPriority(e.target.value)}
+              >
+                <option>Low</option>
+                <option>Medium</option>
+                <option>High</option>
+                <option>Urgent</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Tenant (optional)</label>
+            <input
+              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+              placeholder="e.g., Marcus Lee"
+              value={nrTenant}
+              onChange={(e) => setNrTenant(e.target.value)}
+            />
+          </div>
+
+          <div className="pt-2 flex items-center justify-end gap-3">
+            <button type="button" className="px-3 py-2 rounded-lg border hover:bg-gray-50" onClick={() => setOpenNewReq(false)}>
+              Cancel
+            </button>
+            <Button type="submit" className="bg-black text-white hover:bg-black/90" disabled={createRequest.isPending || !nrSummary.trim()}>
+              {createRequest.isPending ? "Creating…" : "Create Request"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Publish Notice modal */}
+      <Modal open={openNotice} onClose={() => setOpenNotice(false)} title="Publish Tenant Notice">
+        <form onSubmit={handlePublish} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Subject</label>
+            <input
+              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Notice subject"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Message</label>
+            <textarea
+              rows={8}
+              className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Write your notice…"
+            />
+          </div>
+
+          <div className="pt-2 flex items-center justify-end gap-3">
+            <button type="button" className="px-3 py-2 rounded-lg border hover:bg-gray-50" onClick={() => setOpenNotice(false)}>
+              Cancel
+            </button>
+            <Button type="submit" className="bg-blue-700 text-white hover:bg-blue-800" disabled={execute.isLoading}>
+              {execute.isLoading ? "Publishing…" : "Publish"}
+            </Button>
+          </div>
+
+          {execute.isError && (
+            <p className="text-sm text-red-600 mt-2">
+              {(execute.error as any)?.message ?? "Failed to publish notice."}
             </p>
           )}
         </form>

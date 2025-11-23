@@ -34,6 +34,11 @@ export type Settings = {
     lateFeePercent: number;
     reminderCadence: string;
   };
+  // NEW: lightweight policy guardrails
+  policy: {
+    maxJobBudget: number;                // USD threshold before approval requires reason
+    proofRequiredForCompletion: boolean; // Require proof before closing a job
+  };
   vendors: Array<{
     id: string;
     name: string;
@@ -99,6 +104,10 @@ const store: Settings = {
   channels: { gmail: { connected: false }, sms: { connected: false }, portalEnabled: false },
   sla: { rules: { leakHours: 4, noHeatHours: 6, normalHours: 48 } },
   rent: { dueDay: 1, lateFeePercent: 5, reminderCadence: "3/5/7 days" },
+  policy: {
+    maxJobBudget: 500,                 // demo default
+    proofRequiredForCompletion: true,  // demo default
+  },
   vendors: [],
   tenants: [],
 };
@@ -108,7 +117,7 @@ const agentDraftsStore: AgentDraft[] = [];
 const agentRunsStore: AgentRun[] = [];
 
 // ─────────────────────────────────────────────────────────────────────────────
-/** Accessors you already had */
+/** Accessors you already had + policy helpers */
 // ─────────────────────────────────────────────────────────────────────────────
 export function getSettings(): Settings {
   return store;
@@ -139,6 +148,11 @@ export function updateSla(payload: Settings["sla"]) {
 
 export function updateRent(payload: Partial<Settings["rent"]>) {
   store.rent = { ...store.rent, ...payload };
+}
+
+// NEW: update policy
+export function updatePolicy(payload: Partial<Settings["policy"]>) {
+  store.policy = { ...store.policy, ...payload };
 }
 
 export function importTenants(rows: Array<Omit<Settings["tenants"][number], "id">>) {
@@ -219,6 +233,40 @@ export function getAgentDraftById(id: string): AgentDraft | undefined {
 // (Optional) expose stores for debugging/dev tools
 export const __agentDraftsStore = agentDraftsStore;
 export const __agentRunsStore = agentRunsStore;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOG (you added these in previous step)
+// ─────────────────────────────────────────────────────────────────────────────
+type AuditRow = {
+  id: string;
+  ts: string;
+  actor: "agent" | "system" | "user";
+  action: string;
+  requestId?: string;
+  jobId?: string;
+  vendorId?: string;
+  meta?: Record<string, any>;
+};
+const auditLog: AuditRow[] = [];
+
+export function addAudit(row: Omit<AuditRow, "id" | "ts">) {
+  auditLog.unshift({ id: uid(), ts: nowIso(), ...row });
+}
+export function listAudit(filters?: Partial<AuditRow>) {
+  const f = filters || {};
+  return auditLog.filter((r) => {
+    return (
+      (f.actor ? r.actor === f.actor : true) &&
+      (f.action ? r.action === f.action : true) &&
+      (f.requestId ? r.requestId === f.requestId : true) &&
+      (f.jobId ? r.jobId === f.jobId : true)
+    );
+  });
+}
+export function resetAuditLog() {
+  auditLog.length = 0;
+  return { items: 0 };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NEW: reset for Demo Reset endpoint

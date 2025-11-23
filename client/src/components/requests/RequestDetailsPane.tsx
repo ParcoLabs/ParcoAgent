@@ -1,250 +1,326 @@
 // client/src/components/requests/RequestDetailsPane.tsx
 import * as React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { useRequest } from "@/lib/requests.hooks";
-import type { Request } from "@/types/requests";
-import { Phone, Mail, MessageSquare, Wrench } from "lucide-react";
+import {
+  useDrafts,
+  useApproveDraft,
+  useVendors,
+  useAssignVendor,
+} from "@/lib/hooks";
+import {
+  Mail,
+  Mails,
+  User,
+  Wrench,
+  Check,
+  Loader2,
+  ChevronDown,
+} from "lucide-react";
 
-import AIComposerModal from "./AIComposerModal";
-import AssignVendorModal from "./AssignVendorModal";
-import AssignVendorPanel from "./AssignVendorPanel";
+/* ----------------------------- shape helpers ------------------------------ */
+function getRequestIdFromDraft(d: any): string | undefined {
+  return (
+    d?.requestId ??
+    d?.request_id ??
+    d?.reqId ??
+    (typeof d?.request === "string" ? d.request : d?.request?.id) ??
+    d?.meta?.requestId ??
+    d?.meta?.request_id ??
+    undefined
+  );
+}
+function getType(d: any): "tenant_update" | "vendor_outreach" | "other" {
+  const t = String(
+    d?.type ?? d?.kind ?? d?.channel ?? d?.meta?.type ?? d?.tags?.[0] ?? ""
+  ).toLowerCase();
+  if (t.includes("tenant")) return "tenant_update";
+  if (t.includes("vendor") || t.includes("outreach") || t.includes("quote")) return "vendor_outreach";
+  const ch = String(d?.channel || "").toLowerCase();
+  if (ch.includes("tenant")) return "tenant_update";
+  if (ch.includes("vendor")) return "vendor_outreach";
+  return "other";
+}
+function getChannel(d: any): "email" | "sms" | "other" {
+  const c = String(d?.channel ?? d?.meta?.channel ?? "").toLowerCase();
+  if (c.includes("email")) return "email";
+  if (c.includes("sms") || c.includes("text")) return "sms";
+  return "email";
+}
+function getSubject(d: any): string {
+  return (
+    d?.subject ??
+    d?.title ??
+    d?.meta?.subject ??
+    (getType(d) === "vendor_outreach" ? "Quote request" : "Tenant notice")
+  );
+}
+function getBody(d: any): string {
+  const b = d?.body ?? d?.text ?? d?.content ?? d?.meta?.body ?? "";
+  return typeof b === "string" ? b : JSON.stringify(b, null, 2);
+}
+function getTo(d: any): string | undefined {
+  return d?.to ?? d?.recipient ?? d?.meta?.to ?? d?.meta?.recipient ?? undefined;
+}
+function getDraftId(d: any): string {
+  return String(d?.id ?? d?.draftId ?? d?.uuid ?? d?._id ?? Math.random().toString(36).slice(2));
+}
 
-// Local draft type (UI)
-type Draft = {
-  id: string;
-  createdAt: string;
-  status: "draft" | "sent";
-  kind: "tenant_reply" | "vendor_outreach";
-  channel: "email" | "sms";
-  to: string;
-  subject?: string | null;
-  body: string;
-};
+/* --------------------------------- UI bits -------------------------------- */
+function Pill({ children, tone = "slate" }: { children: React.ReactNode; tone?: "slate" | "green" | "blue" | "amber" }) {
+  const map: Record<string, string> = {
+    slate: "border-slate-300 bg-slate-50 text-slate-800",
+    green: "border-emerald-300 bg-emerald-50 text-emerald-800",
+    blue: "border-blue-300 bg-blue-50 text-blue-800",
+    amber: "border-amber-300 bg-amber-50 text-amber-800",
+  };
+  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${map[tone]}`}>{children}</span>;
+}
 
-export default function RequestDetailsPane({ selected }: { selected?: Request | null }) {
-  const { data } = useRequest(selected?.id);
-  const [composeOpen, setComposeOpen] = React.useState(false);
-  const [composeTarget, setComposeTarget] = React.useState<"tenant" | "vendor" | "owner">("tenant");
-  const [assignOpen, setAssignOpen] = React.useState(false);
+function DraftCard({
+  draft,
+  onApprove,
+  disabled,
+}: {
+  draft: any;
+  onApprove: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const type = getType(draft);
+  const channel = getChannel(draft);
+  const subject = getSubject(draft);
+  const body = getBody(draft);
+  const to = getTo(draft);
+  const icon = type === "vendor_outreach" ? <Wrench className="h-4 w-4" /> : <User className="h-4 w-4" />;
+  const tone = type === "vendor_outreach" ? "blue" : "amber";
 
-  const [drafts, setDrafts] = React.useState<Draft[]>([]);
-  const [draftsLoading, setDraftsLoading] = React.useState(false);
-  const requestId = selected?.id;
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {icon}
+          <div className="font-medium">{type === "vendor_outreach" ? "Vendor Outreach" : "Tenant Notice"}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Pill tone={tone}>{type === "vendor_outreach" ? "vendor" : "tenant"}</Pill>
+          <Pill>
+            {channel === "email" ? (
+              <span className="inline-flex items-center gap-1">
+                <Mail className="h-3 w-3" />
+                email
+              </span>
+            ) : (
+              "sms"
+            )}
+          </Pill>
+        </div>
+      </div>
 
-  async function loadDrafts() {
-    if (!requestId) return;
-    setDraftsLoading(true);
-    try {
-      const res = await fetch(`/api/agent/drafts?requestId=${requestId}`);
-      const json = await res.json();
-      setDrafts(json?.drafts ?? []);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setDraftsLoading(false);
-    }
-  }
+      <div className="mt-2 text-sm">
+        <div className="text-slate-500">To</div>
+        <div className="font-mono text-slate-800">{to || "—"}</div>
+      </div>
 
-  async function runAgent() {
-    if (!requestId) return;
-    await fetch(`/api/agent/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId }),
-    });
-    await loadDrafts();
-  }
+      <div className="mt-3">
+        <div className="text-slate-500 text-xs">Subject</div>
+        <div className="text-sm font-medium">{subject}</div>
+      </div>
 
-  async function approveDraft(id: string) {
-    await fetch(`/api/agent/drafts/${id}/approve`, { method: "POST" });
-    await loadDrafts();
-  }
+      <div className="mt-3">
+        <div className="text-slate-500 text-xs">Body</div>
+        <pre className="whitespace-pre-wrap rounded-md border bg-slate-50 p-3 text-[12.5px] leading-5">
+{body}
+        </pre>
+      </div>
+
+      <div className="mt-3 flex items-center justify-end">
+        <button
+          onClick={() => onApprove(getDraftId(draft))}
+          disabled={disabled}
+          className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+          title="Approve & Send"
+        >
+          {disabled ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          {disabled ? "Sending…" : "Approve & Send"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------- vendor dropdown ----------------------------- */
+function VendorSelect({
+  vendors,
+  value,
+  onChange,
+  disabled,
+}: {
+  vendors: Array<{ id: string; name: string }>;
+  value?: string;
+  onChange: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [filter, setFilter] = React.useState("");
+
+  const shown = React.useMemo(
+    () => vendors.filter((v) => v.name.toLowerCase().includes(filter.toLowerCase())),
+    [vendors, filter]
+  );
+
+  const current = vendors.find((v) => v.id === value);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((s) => !s)}
+        className="w-full rounded-lg border bg-white px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-60 inline-flex items-center justify-between"
+      >
+        <span className="truncate">{current ? current.name : "Select vendor…"}</span>
+        <ChevronDown className="h-4 w-4 text-gray-500" />
+      </button>
+      {open && (
+        <div className="absolute left-0 z-20 mt-1 w-full rounded-lg border bg-white shadow-lg p-2">
+          <input
+            className="w-full rounded-md border px-2 py-1 text-xs mb-2"
+            placeholder="Filter vendors…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+          <div className="max-h-56 overflow-auto">
+            {shown.length === 0 ? (
+              <div className="text-xs text-gray-500 px-2 py-1">No vendors</div>
+            ) : (
+              shown.map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => {
+                    onChange(v.id);
+                    setOpen(false);
+                  }}
+                  className="w-full text-left text-sm px-2 py-1 rounded hover:bg-gray-50"
+                >
+                  {v.name}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------------- main ---------------------------------- */
+export default function RequestDetailsPane({ selected }: { selected: { id: string } | null }) {
+  const { data: drafts = [], isFetching } = useDrafts();
+  const approve = useApproveDraft();
+
+  const { data: vendors = [] } = useVendors();
+  const assignVendor = useAssignVendor();
+
+  const [vendorId, setVendorId] = React.useState<string>("");
+  const [note, setNote] = React.useState<string>("");
 
   React.useEffect(() => {
-    loadDrafts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestId]);
+    // reset picker when switching requests
+    setVendorId("");
+    setNote("");
+  }, [selected?.id]);
 
-  if (!selected) {
-    return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        Select a request to view details
-      </div>
-    );
-  }
+  const requestId = selected?.id ? String(selected.id) : "";
+  const mine = React.useMemo(() => {
+    if (!requestId) return [];
+    return drafts.filter((d: any) => String(getRequestIdFromDraft(d) || "") === requestId);
+  }, [drafts, requestId]);
+
+  const vendorDrafts = mine.filter((d: any) => getType(d) === "vendor_outreach");
+  const tenantDrafts = mine.filter((d: any) => getType(d) === "tenant_update");
+  const otherDrafts = mine.filter(
+    (d: any) => !["vendor_outreach", "tenant_update"].includes(getType(d))
+  );
+
+  if (!selected) return <div className="text-sm text-slate-500">Select a request to view details.</div>;
 
   return (
     <div className="space-y-4">
-      {/* --- Request header --- */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>{data?.title}</span>
-            <div className="flex gap-2">
-              <Badge
-                variant={
-                  selected.priority === "P1"
-                    ? "destructive"
-                    : selected.priority === "P2"
-                    ? "default"
-                    : "secondary"
-                }
-              >
-                {selected.priority}
-              </Badge>
-              <Badge variant="outline">{selected.status}</Badge>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="text-sm text-muted-foreground">
-            Created {new Date(selected.createdAt).toLocaleString()}
-          </div>
-          <p>{data?.description}</p>
-
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="font-medium">Tenant</div>
-              <div>{data?.tenant?.name ?? "—"}</div>
-              <div className="flex flex-wrap gap-3 mt-1 text-muted-foreground items-center">
-                {data?.tenant?.phone && (
-                  <span className="inline-flex items-center gap-1">
-                    <Phone className="w-4 h-4" />
-                    {data.tenant.phone}
-                  </span>
-                )}
-                {data?.tenant?.email && (
-                  <span className="inline-flex items-center gap-1">
-                    <Mail className="w-4 h-4" />
-                    {data.tenant.email}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="font-medium">Property / Unit</div>
-              <div>
-                {selected.propertyId} • {selected.unit ?? "—"}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* --- Inline Assign Vendor (dropdown + button) --- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Assign Vendor</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AssignVendorPanel requestId={selected.id} category={selected.category} />
-        </CardContent>
-      </Card>
-
-      {/* --- Agent drafts --- */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>AI Agent Drafts</span>
-            <Button size="sm" onClick={runAgent}>
-              Run Agent
-            </Button>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {draftsLoading ? (
-            <div className="text-sm text-muted-foreground">Loading drafts…</div>
-          ) : drafts.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              No drafts yet. Click <span className="font-medium">Run Agent</span>.
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {drafts.map((d) => (
-                <li key={d.id} className="p-3 border rounded bg-white shadow-sm text-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">
-                        {d.kind === "tenant_reply" ? "Tenant Reply" : "Vendor Outreach"}
-                      </Badge>
-                      <Badge variant="outline">{d.channel}</Badge>
-                    </div>
-                    <Badge
-                      variant={d.status === "sent" ? "default" : "secondary"}
-                      className={d.status === "sent" ? "bg-green-600 text-white" : ""}
-                    >
-                      {d.status}
-                    </Badge>
-                  </div>
-                  {d.subject && <div className="mt-1 font-medium">{d.subject}</div>}
-                  <div className="mt-1 whitespace-pre-wrap text-muted-foreground">{d.body}</div>
-                  {d.status === "draft" && (
-                    <div className="mt-2">
-                      <Button size="sm" onClick={() => approveDraft(d.id)}>
-                        Approve &amp; Send
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* --- Actions row (kept) --- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button
+      {/* -------------------------- Assign Vendor --------------------------- */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="text-base font-semibold mb-3">Assign Vendor</div>
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(240px,1fr),120px] gap-2">
+          <VendorSelect vendors={vendors as any[]} value={vendorId} onChange={setVendorId} disabled={assignVendor.isPending} />
+          <button
+            type="button"
             onClick={() => {
-              setComposeTarget("tenant");
-              setComposeOpen(true);
+              if (!requestId || !vendorId) return;
+              assignVendor.mutate({ requestId, vendorId, note: note || undefined });
             }}
+            disabled={!vendorId || assignVendor.isPending}
+            className="rounded-lg border bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
-            <MessageSquare className="w-4 h-4 mr-2" />
-            AI Draft → Tenant
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setComposeTarget("vendor");
-              setComposeOpen(true);
-            }}
-          >
-            <MessageSquare className="w-4 h-4 mr-2" />
-            AI Draft → Vendor
-          </Button>
-          <Button variant="outline" onClick={() => setAssignOpen(true)}>
-            <Wrench className="w-4 h-4 mr-2" />
-            Assign Vendor (Modal)
-          </Button>
-        </CardContent>
-      </Card>
+            {assignVendor.isPending ? "Assigning…" : "Assign"}
+          </button>
+        </div>
+        <input
+          className="mt-2 w-full rounded-lg border px-3 py-2 text-sm"
+          placeholder="Optional note for the activity log (visible in timeline)…"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
 
-      {/* Modals */}
-      <AIComposerModal
-        open={composeOpen}
-        onOpenChange={setComposeOpen}
-        requestId={selected.id}
-        defaultTarget={composeTarget}
-        defaultTo={
-          composeTarget === "tenant"
-            ? data?.tenant?.email ?? data?.tenant?.phone
-            : undefined
-        }
-      />
-      <AssignVendorModal
-        open={assignOpen}
-        onOpenChange={setAssignOpen}
-        requestId={selected.id}
-        category={selected.category}
-      />
+      {/* -------------------------- AI Agent Drafts ------------------------- */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="text-base font-semibold mb-3">AI Agent Drafts</div>
+
+        {isFetching && drafts.length === 0 ? (
+          <div className="rounded-lg border border-dashed bg-white p-4 text-sm text-slate-500">Fetching drafts…</div>
+        ) : null}
+
+        {mine.length === 0 ? (
+          <div className="rounded-lg border border-dashed bg-white p-4 text-sm text-slate-600">
+            No drafts yet. Click <span className="font-medium">Run Agent</span> (choose <em>Both</em> or <em>Tenant Notice</em>) or{" "}
+            <span className="font-medium">Source 3 Quotes</span> to generate drafts.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {tenantDrafts.map((d) => (
+              <DraftCard
+                key={getDraftId(d)}
+                draft={d}
+                onApprove={(id) => approve.mutate(id)}
+                disabled={approve.isPending}
+              />
+            ))}
+            {vendorDrafts.map((d) => (
+              <DraftCard
+                key={getDraftId(d)}
+                draft={d}
+                onApprove={(id) => approve.mutate(id)}
+                disabled={approve.isPending}
+              />
+            ))}
+            {otherDrafts.length > 0 ? (
+              <div className="rounded-xl border bg-white p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mails className="h-4 w-4" />
+                  <div className="font-medium">Other Drafts</div>
+                </div>
+                <div className="space-y-2">
+                  {otherDrafts.map((d) => (
+                    <DraftCard
+                      key={getDraftId(d)}
+                      draft={d}
+                      onApprove={(id) => approve.mutate(id)}
+                      disabled={approve.isPending}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

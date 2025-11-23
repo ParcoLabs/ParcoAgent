@@ -4,16 +4,75 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useProperties } from "@/lib/properties.hooks";
+import { useProperties as useFilteredProperties } from "@/lib/properties.hooks"; // your original filtered hook
 import type { PropertyRow } from "@/types/properties";
 
-export default function PropertiesList({ onSelect }: { onSelect: (row: PropertyRow) => void }) {
+type Props = {
+  /** Optional rows provided by the page; if present, we prefer these. */
+  properties?: PropertyRow[];
+  onSelect: (row: PropertyRow) => void;
+};
+
+/** Safely split "City, State • Type" or "City, State" style addresses */
+function parseAddress(addr?: string | null): { city: string; state: string } {
+  if (!addr) return { city: "—", state: "" };
+  const cityState = addr.split("•")[0]?.trim() ?? addr;
+  const [city = "—", st = "" ] = cityState.split(",").map((s) => s.trim());
+  return { city: city || "—", state: st || "" };
+}
+
+/** Map a lightweight PropertyRow → the richer table shape your UI expects */
+function mapPropRowToDisplay(r: PropertyRow) {
+  const { city, state } = parseAddress(r.address ?? "");
+  return {
+    id: r.id,
+    name: r.name,
+    city,
+    state,
+    type: (r as any).type ?? "Multifamily", // fallback; your seed uses Multifamily/Mixed Use
+    unitsTotal: (r as any).unitsTotal ?? r.units ?? 0,
+    occupancyPct: (r as any).occupancyPct ?? r.occ ?? 0,
+    ttmNOI: (r as any).ttmNOI ?? r.noiTtm ?? 0,
+    __orig: r, // keep original row for onSelect
+  };
+}
+
+export default function PropertiesList({ properties: propRows, onSelect }: Props) {
   const [search, setSearch] = React.useState("");
   const [type, setType] = React.useState<string>("All");
   const [status, setStatus] = React.useState<string>("All");
   const [city, setCity] = React.useState<string>("All");
 
-  const { data, isLoading } = useProperties({ search, type: type as any, status: status as any, city });
+  // Always call the hook to keep rules intact; we'll prefer propRows if provided
+  const { data, isLoading } = useFilteredProperties({ search, type: type as any, status: status as any, city });
+
+  // Build the display rows, preferring the prop rows (so new items show immediately)
+  const rows = React.useMemo(() => {
+    if (propRows && Array.isArray(propRows)) {
+      const mapped = propRows.map(mapPropRowToDisplay);
+
+      // Apply the *same* filters locally so UX matches your hook behavior
+      return mapped.filter((r) => {
+        const matchesSearch =
+          !search ||
+          r.name.toLowerCase().includes(search.toLowerCase()) ||
+          r.city.toLowerCase().includes(search.toLowerCase());
+        const matchesType = type === "All" || (r.type || "").toLowerCase() === type.toLowerCase();
+        const matchesCity = city === "All" || r.city === city;
+        // Status doesn’t exist on propRows; treat as pass-through (matches all)
+        const matchesStatus = true || status === "All";
+        return matchesSearch && matchesType && matchesCity && matchesStatus;
+      });
+    }
+
+    // Fallback to your original hook shape (expects data?.rows)
+    return (data?.rows ?? []).map((r: any) => ({
+      ...r,
+      __orig: r as PropertyRow,
+    }));
+  }, [propRows, data?.rows, search, type, city /* status intentionally ignored for propRows */]);
+
+  const loading = propRows ? false : isLoading;
 
   return (
     <Card className="h-full">
@@ -47,6 +106,7 @@ export default function PropertiesList({ onSelect }: { onSelect: (row: PropertyR
           </Select>
         </div>
       </CardHeader>
+
       <CardContent className="p-0">
         <ScrollArea className="h-[70vh]">
           <table className="w-full text-sm">
@@ -60,18 +120,25 @@ export default function PropertiesList({ onSelect }: { onSelect: (row: PropertyR
               </tr>
             </thead>
             <tbody>
-              {isLoading && <tr><td className="p-4" colSpan={5}>Loading…</td></tr>}
-              {!isLoading && data?.rows?.length === 0 && <tr><td className="p-4" colSpan={5}>No properties</td></tr>}
-              {data?.rows?.map((r) => (
-                <tr key={r.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => onSelect(r)}>
-                  <td className="p-3 font-medium">{r.id.replace("p-","")}</td>
+              {loading && <tr><td className="p-4" colSpan={5}>Loading…</td></tr>}
+              {!loading && rows.length === 0 && <tr><td className="p-4" colSpan={5}>No properties</td></tr>}
+
+              {!loading && rows.map((r: any) => (
+                <tr
+                  key={r.id}
+                  className="hover:bg-muted/50 cursor-pointer"
+                  onClick={() => onSelect(r.__orig ?? r)}
+                >
+                  <td className="p-3 font-medium">{String(r.id).replace(/^p-/, "")}</td>
                   <td className="p-3">
                     <div className="font-medium">{r.name}</div>
-                    <div className="text-xs text-muted-foreground">{r.city}, {r.state} • {r.type}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {r.city}{r.state ? `, ${r.state}` : ""}{r.type ? ` • ${r.type}` : ""}
+                    </div>
                   </td>
-                  <td className="p-3">{r.unitsTotal}</td>
-                  <td className="p-3">{r.occupancyPct}%</td>
-                  <td className="p-3">${Math.round(r.ttmNOI/1000)}k</td>
+                  <td className="p-3">{r.unitsTotal ?? 0}</td>
+                  <td className="p-3">{typeof r.occupancyPct === "number" ? r.occupancyPct : 0}%</td>
+                  <td className="p-3">${Math.round((r.ttmNOI ?? 0) / 1000)}k</td>
                 </tr>
               ))}
             </tbody>
