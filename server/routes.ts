@@ -144,9 +144,20 @@ type PropertyRow = {
   id: string;
   name: string;
   address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  type?: string;
+  status?: string;
   units?: number;
+  unitsTotal?: number;
   occ?: number;
+  occupancyPct?: number;
   noiTtm?: number;
+  ttmNOI?: number;
+  yearBuilt?: number | null;
+  owner?: string | null;
+  avgRent?: number | null;
+  propertyClass?: string | null;
 };
 
 const slug = (s: string) =>
@@ -1013,7 +1024,30 @@ router.get("/properties", async (_req, res) => {
 });
 
 router.post("/properties", async (req, res) => {
-  const { name, address } = (req.body ?? {}) as { name?: string; address?: string | null };
+  const { 
+    name, 
+    address, 
+    city, 
+    state, 
+    type, 
+    unitsTotal, 
+    yearBuilt, 
+    owner, 
+    avgRent, 
+    propertyClass 
+  } = (req.body ?? {}) as { 
+    name?: string; 
+    address?: string | null;
+    city?: string;
+    state?: string;
+    type?: string;
+    unitsTotal?: number;
+    yearBuilt?: number;
+    owner?: string;
+    avgRent?: number;
+    propertyClass?: string;
+  };
+  
   if (!name) return res.status(400).json({ error: "name required" });
 
   if (USE_DB && repo && typeof (repo as any).createProperty === "function") {
@@ -1027,15 +1061,29 @@ router.post("/properties", async (req, res) => {
 
   const pid = slug(name);
   const exists = PROPERTIES_STORE.find((p) => p.id === pid);
+  
   const newProp: PropertyRow = {
     id: exists ? `${pid}-${Math.random().toString(36).slice(2, 6)}` : pid,
     name,
-    address: address ?? null,
-    units: 0,
+    address: address ?? (city && state ? `${city}, ${state}` : null),
+    city: city ?? null,
+    state: state ?? null,
+    type: type ?? "Multifamily",
+    status: "Active",
+    units: unitsTotal ?? 0,
+    unitsTotal: unitsTotal ?? 0,
     occ: 0,
+    occupancyPct: 0,
     noiTtm: 0,
+    ttmNOI: 0,
+    yearBuilt: yearBuilt ?? null,
+    owner: owner ?? null,
+    avgRent: avgRent ?? null,
+    propertyClass: propertyClass ?? "B",
   };
+  
   PROPERTIES_STORE.push(newProp);
+  console.log("[POST /properties] Created property:", newProp.id, newProp.name);
   return res.json({ ok: true, property: newProp });
 });
 

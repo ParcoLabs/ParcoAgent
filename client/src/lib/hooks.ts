@@ -194,7 +194,18 @@ export function useProperties() {
 export function useCreateProperty(opts?: { onSuccess?: () => void; onError?: (e: any) => void }) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; address?: string | null }) => apiCreateProperty(input),
+    mutationFn: (input: {
+      name: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      type?: string;
+      unitsTotal?: number;
+      yearBuilt?: number;
+      owner?: string;
+      avgRent?: number;
+      propertyClass?: string;
+    }) => apiCreateProperty(input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/properties"] });
       opts?.onSuccess?.();

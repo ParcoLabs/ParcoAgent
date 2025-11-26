@@ -69,29 +69,60 @@ export default function PropertiesPage() {
   const [propertyClass, setPropertyClass] = React.useState<string>("B");
   const createProperty = useCreateProperty();
 
+  function resetCreateForm() {
+    setName("");
+    setAddress("");
+    setCity("");
+    setState("");
+    setPropertyType("Multifamily");
+    setUnitsTotal("");
+    setYearBuilt("");
+    setOwner("");
+    setAvgRent("");
+    setPropertyClass("B");
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
 
+    const fullAddress = city.trim() && state.trim() 
+      ? `${city.trim()}, ${state.trim()}` 
+      : address.trim() || undefined;
+
     createProperty.mutate(
-      { name: name.trim(), address: address.trim() || undefined },
+      { 
+        name: name.trim(), 
+        address: fullAddress,
+        city: city.trim() || undefined,
+        state: state.trim() || undefined,
+        type: propertyType,
+        unitsTotal: unitsTotal !== "" ? Number(unitsTotal) : 0,
+        yearBuilt: yearBuilt !== "" ? Number(yearBuilt) : undefined,
+        owner: owner.trim() || undefined,
+        avgRent: avgRent !== "" ? Number(avgRent) : undefined,
+        propertyClass: propertyClass,
+      },
       {
         onSuccess: (res) => {
           qc.invalidateQueries({ queryKey: ["/properties"] });
           setOpenCreate(false);
-          setName("");
-          setAddress("");
+          resetCreateForm();
 
           const prop = (res as any)?.property;
           if (prop) {
             setSelected({
               id: String(prop.id),
               name: prop.name,
-              address: prop.address ?? "",
-              units: 0,
-              occ: 0,
-              noiTtm: 0,
-            });
+              address: prop.address ?? fullAddress ?? "",
+              city: prop.city ?? city.trim(),
+              state: prop.state ?? state.trim(),
+              type: prop.type ?? propertyType,
+              status: prop.status ?? "Active",
+              unitsTotal: prop.unitsTotal ?? (unitsTotal !== "" ? Number(unitsTotal) : 0),
+              occupancyPct: prop.occupancyPct ?? 0,
+              ttmNOI: prop.ttmNOI ?? 0,
+            } as PropertyRow);
           }
         },
       }
@@ -270,34 +301,159 @@ Parco PM Agent`;
 
       {/* Add Property modal */}
       <Modal open={openCreate} onClose={() => setOpenCreate(false)} title="Add Property">
-        <form onSubmit={handleCreate} className="space-y-4">
+        <form onSubmit={handleCreate} className="space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Property Name */}
           <div>
-            <label className="block text-sm font-medium mb-1">Name *</label>
+            <label className="block text-sm font-medium mb-1">Property Name *</label>
             <input
+              data-testid="input-property-name"
               className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
-              placeholder="e.g., 225 Pine St"
+              placeholder="e.g., Maple Grove Apartments"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
               required
             />
           </div>
+
+          {/* Street Address */}
           <div>
-            <label className="block text-sm font-medium mb-1">Address</label>
+            <label className="block text-sm font-medium mb-1">Street Address</label>
             <input
+              data-testid="input-property-address"
               className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
-              placeholder="City, State"
+              placeholder="e.g., 225 Pine Street"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
             />
           </div>
 
+          {/* City & State */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">City</label>
+              <input
+                data-testid="input-property-city"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                placeholder="e.g., Austin"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">State</label>
+              <input
+                data-testid="input-property-state"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                placeholder="e.g., TX"
+                value={state}
+                onChange={(e) => setState(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Property Type & Class */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Property Type</label>
+              <select
+                data-testid="select-property-type"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                value={propertyType}
+                onChange={(e) => setPropertyType(e.target.value)}
+              >
+                <option value="Multifamily">Multifamily</option>
+                <option value="Single Family">Single Family</option>
+                <option value="Mixed Use">Mixed Use</option>
+                <option value="Retail">Retail</option>
+                <option value="Office">Office</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Class</label>
+              <select
+                data-testid="select-property-class"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                value={propertyClass}
+                onChange={(e) => setPropertyClass(e.target.value)}
+              >
+                <option value="A">Class A</option>
+                <option value="B">Class B</option>
+                <option value="C">Class C</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Units & Year Built */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Total Units</label>
+              <input
+                data-testid="input-property-units"
+                type="number"
+                min="0"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                placeholder="e.g., 24"
+                value={unitsTotal}
+                onChange={(e) => setUnitsTotal(e.target.value ? Number(e.target.value) : "")}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Year Built</label>
+              <input
+                data-testid="input-property-year"
+                type="number"
+                min="1800"
+                max={new Date().getFullYear()}
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                placeholder="e.g., 1998"
+                value={yearBuilt}
+                onChange={(e) => setYearBuilt(e.target.value ? Number(e.target.value) : "")}
+              />
+            </div>
+          </div>
+
+          {/* Owner & Average Rent */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Owner Name</label>
+              <input
+                data-testid="input-property-owner"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                placeholder="e.g., Acme Properties LLC"
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Average Rent ($)</label>
+              <input
+                data-testid="input-property-rent"
+                type="number"
+                min="0"
+                className="w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                placeholder="e.g., 1450"
+                value={avgRent}
+                onChange={(e) => setAvgRent(e.target.value ? Number(e.target.value) : "")}
+              />
+            </div>
+          </div>
+
           <div className="pt-2 flex items-center justify-end gap-3">
-            <button type="button" className="px-3 py-2 rounded-lg border hover:bg-gray-50" onClick={() => setOpenCreate(false)}>
+            <button 
+              type="button" 
+              className="px-3 py-2 rounded-lg border hover:bg-gray-50" 
+              onClick={() => { setOpenCreate(false); resetCreateForm(); }}
+            >
               Cancel
             </button>
-            <Button type="submit" className="bg-black text-white hover:bg-black/90" disabled={createProperty.isLoading}>
-              {createProperty.isLoading ? "Saving..." : "Save Property"}
+            <Button 
+              type="submit" 
+              data-testid="button-save-property"
+              className="bg-black text-white hover:bg-black/90" 
+              disabled={createProperty.isPending}
+            >
+              {createProperty.isPending ? "Saving..." : "Save Property"}
             </Button>
           </div>
 
@@ -404,8 +560,8 @@ Parco PM Agent`;
             <button type="button" className="px-3 py-2 rounded-lg border hover:bg-gray-50" onClick={() => setOpenNotice(false)}>
               Cancel
             </button>
-            <Button type="submit" className="bg-blue-700 text-white hover:bg-blue-800" disabled={execute.isLoading}>
-              {execute.isLoading ? "Publishing…" : "Publish"}
+            <Button type="submit" className="bg-blue-700 text-white hover:bg-blue-800" disabled={execute.isPending}>
+              {execute.isPending ? "Publishing…" : "Publish"}
             </Button>
           </div>
 

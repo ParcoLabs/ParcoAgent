@@ -177,7 +177,21 @@ export const apiJobComplete = (id: string, note?: string) =>
 
 // Properties
 export const apiListProperties = () => get("/properties");
-export const apiCreateProperty = (input: { name: string; address?: string | null }) =>
+
+export interface CreatePropertyInput {
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  type?: string;
+  unitsTotal?: number;
+  yearBuilt?: number;
+  owner?: string;
+  avgRent?: number;
+  propertyClass?: string;
+}
+
+export const apiCreateProperty = (input: CreatePropertyInput) =>
   post("/properties", input);
 export const apiUpdateProperty = (id: string, patch: { name?: string | null; address?: string | null }) =>
   put(`/properties/${id}`, patch);
