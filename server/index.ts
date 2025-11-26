@@ -6,6 +6,7 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "http";
 import routes from "./routes.js";
+import webAgentRoutes from "./routes/webAgent.js";
 import { setupVite, serveStatic } from "./vite.js";
 import path from "path";
 import fs from "fs";
@@ -54,8 +55,16 @@ app.use(
 
 app.use(express.json({ limit: "5mb" }));
 
+// Serve webshots directory statically
+const webshotsDir = path.join(process.cwd(), "webshots");
+if (!fs.existsSync(webshotsDir)) {
+  fs.mkdirSync(webshotsDir, { recursive: true });
+}
+app.use("/webshots", express.static(webshotsDir));
+
 // API
 app.use("/api", routes);
+app.use("/api", webAgentRoutes);
 
 // Replit provides PORT (commonly 3000). Fall back to 5000 for local.
 const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;

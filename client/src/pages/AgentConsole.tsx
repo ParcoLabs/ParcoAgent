@@ -3,7 +3,8 @@ import * as React from "react";
 import Sidebar from "@/components/dashboard/sidebar";
 import {
   Loader2, Bot, User, Paperclip, Settings2, Send,
-  Building2, ListChecks, Plus, Trash2
+  Building2, ListChecks, Plus, Trash2, ChevronDown, Globe, X,
+  Play, RefreshCw, ExternalLink, Save, FolderOpen
 } from "lucide-react";
 
 /* ---------------- Types ---------------- */
@@ -139,8 +140,443 @@ const MessageBubble: React.FC<{ m: ChatMessage }> = ({ m }) => {
   );
 };
 
-const InputBar: React.FC<{ value: string; onChange: (v: string) => void; onSend: () => void; disabled?: boolean; }> =
-  ({ value, onChange, onSend, disabled }) => (
+/* ---------------- Web Automation Types ---------------- */
+type WebStep = { action: string; args?: Record<string, any> };
+type WebRecipe = { name: string; steps: WebStep[]; createdAt: string };
+
+/* ---------------- Web Automation Modal ---------------- */
+const WebAutomationModal: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClose }) => {
+  const [sessionId, setSessionId] = React.useState<string | null>(null);
+  const [screenshotUrl, setScreenshotUrl] = React.useState<string | null>(null);
+  const [currentUrl, setCurrentUrl] = React.useState<string>("");
+  const [startUrl, setStartUrl] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [stepAction, setStepAction] = React.useState<string>("goto");
+  const [stepSelector, setStepSelector] = React.useState("");
+  const [stepUrl, setStepUrl] = React.useState("");
+  const [stepText, setStepText] = React.useState("");
+  const [stepMs, setStepMs] = React.useState<number>(1000);
+  const [stepEngine, setStepEngine] = React.useState<"css" | "xpath">("css");
+
+  const [recipes, setRecipes] = React.useState<WebRecipe[]>([]);
+  const [currentSteps, setCurrentSteps] = React.useState<WebStep[]>([]);
+  const [recipeName, setRecipeName] = React.useState("");
+  const [showRecipeInput, setShowRecipeInput] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      fetch("/api/agent/web/recipes")
+        .then(r => r.json())
+        .then(setRecipes)
+        .catch(() => {});
+    }
+  }, [open]);
+
+  const startSession = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/agent/web/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: startUrl || undefined }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSessionId(data.sessionId);
+        setScreenshotUrl(data.screenshotUrl + "?t=" + Date.now());
+        setCurrentUrl(data.currentUrl);
+      } else {
+        setError(data.error || "Failed to start session");
+      }
+    } catch (e: any) {
+      setError(e?.message || "Failed to start session");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runStep = async (action: string, args?: Record<string, any>) => {
+    if (!sessionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/agent/web/step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, action, args }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setScreenshotUrl(data.screenshotUrl + "?t=" + Date.now());
+        setCurrentUrl(data.currentUrl);
+        setCurrentSteps(prev => [...prev, { action, args }]);
+      } else {
+        setError(data.error || "Step failed");
+      }
+    } catch (e: any) {
+      setError(e?.message || "Step failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshScreenshot = async () => {
+    if (!sessionId) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/agent/web/screenshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setScreenshotUrl(data.screenshotUrl + "?t=" + Date.now());
+        setCurrentUrl(data.currentUrl);
+      }
+    } catch {}
+    setLoading(false);
+  };
+
+  const closeSession = async () => {
+    if (!sessionId) return;
+    try {
+      await fetch("/api/agent/web/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+    } catch {}
+    setSessionId(null);
+    setScreenshotUrl(null);
+    setCurrentUrl("");
+    setCurrentSteps([]);
+  };
+
+  const saveRecipe = async () => {
+    if (!recipeName.trim() || currentSteps.length === 0) return;
+    try {
+      const res = await fetch("/api/agent/web/recipes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: recipeName.trim(), steps: currentSteps }),
+      });
+      const data = await res.json();
+      setRecipes(data);
+      setRecipeName("");
+      setShowRecipeInput(false);
+    } catch {}
+  };
+
+  const loadRecipe = async (recipe: WebRecipe) => {
+    for (const step of recipe.steps) {
+      await runStep(step.action, step.args);
+    }
+  };
+
+  const handleRunCurrentStep = () => {
+    switch (stepAction) {
+      case "goto":
+        runStep("goto", { url: stepUrl });
+        break;
+      case "click":
+        runStep("click", { selector: stepSelector, engine: stepEngine });
+        break;
+      case "type":
+        runStep("type", { selector: stepSelector, text: stepText, engine: stepEngine });
+        break;
+      case "waitFor":
+        runStep("waitFor", { selector: stepSelector, engine: stepEngine });
+        break;
+      case "wait":
+        runStep("wait", { ms: stepMs });
+        break;
+      case "screenshot":
+        runStep("screenshot", {});
+        break;
+    }
+  };
+
+  const handleClose = () => {
+    closeSession();
+    onClose();
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
+      <div className="relative z-[101] w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Globe size={20} /> Web Automation
+          </h2>
+          <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-md">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4">
+          {!sessionId ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Start URL (optional)</label>
+                <input
+                  data-testid="input-start-url"
+                  value={startUrl}
+                  onChange={(e) => setStartUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+              </div>
+              <button
+                data-testid="button-start-session"
+                onClick={startSession}
+                disabled={loading}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                Start Session
+              </button>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Left: Controls */}
+              <div className="space-y-4">
+                <div className="p-3 bg-gray-50 rounded-lg space-y-3">
+                  <div className="flex items-center gap-2">
+                    <select
+                      data-testid="select-step-action"
+                      value={stepAction}
+                      onChange={(e) => setStepAction(e.target.value)}
+                      className="flex-1 rounded border px-2 py-1.5 text-sm"
+                    >
+                      <option value="goto">Goto URL</option>
+                      <option value="click">Click Selector</option>
+                      <option value="type">Type into Selector</option>
+                      <option value="waitFor">Wait for Selector</option>
+                      <option value="wait">Wait (ms)</option>
+                      <option value="screenshot">Screenshot</option>
+                    </select>
+                    <select
+                      value={stepEngine}
+                      onChange={(e) => setStepEngine(e.target.value as "css" | "xpath")}
+                      className="rounded border px-2 py-1.5 text-sm"
+                    >
+                      <option value="css">CSS</option>
+                      <option value="xpath">XPath</option>
+                    </select>
+                  </div>
+
+                  {stepAction === "goto" && (
+                    <input
+                      data-testid="input-step-url"
+                      value={stepUrl}
+                      onChange={(e) => setStepUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full rounded border px-2 py-1.5 text-sm"
+                    />
+                  )}
+
+                  {(stepAction === "click" || stepAction === "type" || stepAction === "waitFor") && (
+                    <input
+                      data-testid="input-step-selector"
+                      value={stepSelector}
+                      onChange={(e) => setStepSelector(e.target.value)}
+                      placeholder="CSS or XPath selector..."
+                      className="w-full rounded border px-2 py-1.5 text-sm"
+                    />
+                  )}
+
+                  {stepAction === "type" && (
+                    <input
+                      data-testid="input-step-text"
+                      value={stepText}
+                      onChange={(e) => setStepText(e.target.value)}
+                      placeholder="Text to type..."
+                      className="w-full rounded border px-2 py-1.5 text-sm"
+                    />
+                  )}
+
+                  {stepAction === "wait" && (
+                    <input
+                      data-testid="input-step-ms"
+                      type="number"
+                      value={stepMs}
+                      onChange={(e) => setStepMs(Number(e.target.value))}
+                      placeholder="Milliseconds"
+                      className="w-full rounded border px-2 py-1.5 text-sm"
+                    />
+                  )}
+
+                  <button
+                    data-testid="button-run-step"
+                    onClick={handleRunCurrentStep}
+                    disabled={loading}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                    Run Step
+                  </button>
+                </div>
+
+                {/* Actions bar */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={refreshScreenshot}
+                    disabled={loading}
+                    className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={14} /> Refresh
+                  </button>
+                  {currentUrl && (
+                    <a
+                      href={currentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
+                    >
+                      <ExternalLink size={14} /> Open URL
+                    </a>
+                  )}
+                  <button
+                    onClick={closeSession}
+                    className="px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1.5"
+                  >
+                    <X size={14} /> Close Session
+                  </button>
+                </div>
+
+                {/* Recipe controls */}
+                <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="text-sm font-medium">Recipes</div>
+                  {currentSteps.length > 0 && (
+                    <div className="text-xs text-gray-600">
+                      Current: {currentSteps.length} step(s)
+                    </div>
+                  )}
+                  {showRecipeInput ? (
+                    <div className="flex gap-2">
+                      <input
+                        value={recipeName}
+                        onChange={(e) => setRecipeName(e.target.value)}
+                        placeholder="Recipe name"
+                        className="flex-1 rounded border px-2 py-1 text-sm"
+                      />
+                      <button
+                        onClick={saveRecipe}
+                        className="px-2 py-1 bg-emerald-600 text-white rounded text-sm"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setShowRecipeInput(false)}
+                        className="px-2 py-1 border rounded text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowRecipeInput(true)}
+                      disabled={currentSteps.length === 0}
+                      className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-100 flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Save size={14} /> Save Recipe
+                    </button>
+                  )}
+                  {recipes.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {recipes.map((r, i) => (
+                        <button
+                          key={i}
+                          onClick={() => loadRecipe(r)}
+                          className="px-2 py-1 text-xs border rounded hover:bg-gray-100 flex items-center gap-1"
+                        >
+                          <FolderOpen size={12} /> {r.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {error && <p className="text-sm text-red-600">{error}</p>}
+              </div>
+
+              {/* Right: Screenshot */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Screenshot</div>
+                {currentUrl && (
+                  <div className="text-xs text-gray-500 truncate">{currentUrl}</div>
+                )}
+                {screenshotUrl ? (
+                  <div className="border rounded-lg overflow-hidden bg-gray-100">
+                    <img
+                      src={screenshotUrl}
+                      alt="Browser screenshot"
+                      className="w-full h-auto"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-64 border rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">
+                    No screenshot
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ---------------- Agent Mode Button ---------------- */
+const AgentModeButton: React.FC<{ onOpenWebAutomation: () => void }> = ({ onOpenWebAutomation }) => {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        data-testid="button-agent-mode"
+        onClick={() => setMenuOpen(!menuOpen)}
+        className="px-3 py-2 rounded-lg border bg-gray-800 text-white hover:bg-gray-700 flex items-center gap-1"
+      >
+        Agent Mode <ChevronDown size={14} />
+      </button>
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+          <div className="absolute right-0 bottom-full mb-1 z-50 bg-white rounded-lg shadow-lg border py-1 min-w-[160px]">
+            <button
+              data-testid="menu-web-automation"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenWebAutomation();
+              }}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+            >
+              <Globe size={16} /> Web Automation
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const InputBar: React.FC<{ 
+  value: string; 
+  onChange: (v: string) => void; 
+  onSend: () => void; 
+  disabled?: boolean;
+  onOpenWebAutomation: () => void;
+}> = ({ value, onChange, onSend, disabled, onOpenWebAutomation }) => (
     <div className="p-3 border-t bg-white">
       <div className="flex items-center gap-2">
         <button className="p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Attach"><Paperclip size={18} /></button>
@@ -159,6 +595,7 @@ const InputBar: React.FC<{ value: string; onChange: (v: string) => void; onSend:
         >
           <Send size={16} /> Send
         </button>
+        <AgentModeButton onOpenWebAutomation={onOpenWebAutomation} />
       </div>
     </div>
   );
@@ -254,6 +691,9 @@ export default function AgentConsole() {
     }
   };
 
+  // Web Automation Modal
+  const [webAutomationOpen, setWebAutomationOpen] = React.useState(false);
+
   return (
     <div className="flex h-screen bg-gray-50 md:flex-row flex-col">
       {/* Sidebar (left app nav) */}
@@ -295,6 +735,7 @@ export default function AgentConsole() {
                   onChange={chat.setInput}
                   onSend={() => chat.send(chat.input, active?.id)}   // <-- send with conversationId
                   disabled={chat.isSending}
+                  onOpenWebAutomation={() => setWebAutomationOpen(true)}
                 />
               </div>
 
@@ -314,6 +755,9 @@ export default function AgentConsole() {
           </div>
         </main>
       </div>
+
+      {/* Web Automation Modal */}
+      <WebAutomationModal open={webAutomationOpen} onClose={() => setWebAutomationOpen(false)} />
     </div>
   );
 }
