@@ -55,10 +55,18 @@ export default function PropertiesPage() {
   // properties
   const { data: properties } = useProperties();
 
-  // --------------------- Create Property (unchanged) ----------------------
+  // --------------------- Create Property ----------------------
   const [openCreate, setOpenCreate] = React.useState(false);
   const [name, setName] = React.useState("");
   const [address, setAddress] = React.useState("");
+  const [city, setCity] = React.useState("");
+  const [state, setState] = React.useState("");
+  const [propertyType, setPropertyType] = React.useState<string>("Multifamily");
+  const [unitsTotal, setUnitsTotal] = React.useState<number | "">("");
+  const [yearBuilt, setYearBuilt] = React.useState<number | "">("");
+  const [owner, setOwner] = React.useState("");
+  const [avgRent, setAvgRent] = React.useState<number | "">("");
+  const [propertyClass, setPropertyClass] = React.useState<string>("B");
   const createProperty = useCreateProperty();
 
   async function handleCreate(e: React.FormEvent) {

@@ -1,0 +1,75 @@
+Objective:
+Update the existing Agent Console so users can (a) chat as usual, (b) click a “Do” split-button next to Send to run agent actions, (c) attach images for Vision triage, and (d) see a Task Drawer with live action status. Add a simple “Web Automation Demo” that opens Zillow via a headless browser, shows a live-ish screenshot, and prompts the user to log in (with an “Open Zillow Login” link). No external paid APIs. Do not touch Git.
+
+Constraints:
+- Work directly in the current open project.
+- Keep USE_DB=false flows intact.
+- No OpenAI calls are required for this task.
+- If Playwright is unavailable on this Replit, install it and add minimal setup.
+- If something can’t run on Replit (graphics), fall back to taking a screenshot after navigation and update it on demand (polling).
+
+Deliverables:
+1) Agent Console composer with:
+   - “+ Attach” button (images => Vision triage)
+   - Context chips: Property / Unit / REQ (editable)
+   - Message input (unchanged behavior for normal Send)
+   - **Send** button (Ask mode, current behavior)
+   - **Do ▾** split-button (Agent Mode actions menu)
+
+2) Do ▾ menu actions (client → server, zero-LLM parser):
+   - Source 3 quotes (uses REQ from context; or asks for one)
+   - Schedule vendor visit (free-text window + REQ)
+   - Draft & send notice (draft first; sending optional here)
+   - Create listing draft (beds/baths/sqft/rent/unit/property)
+   These should call our existing internal endpoints:
+     • POST /api/agent/run { mode:"source-quotes", requestId }
+     • POST /api/agent/run { mode:"schedule_visit", requestId, window }
+     • Drafts API to create a notice draft
+     • Listing API to create a listing draft
+   Show toasts + links to Requests/Vendors/Drafts.
+
+3) Vision triage:
+   - Backend: POST /api/agent/vision (multipart: { image, note? })
+     * NO paid APIs; return a realistic static triage JSON and short summary string.
+       Example shape:
+       {
+         issues: [{ name:"Boiler short-cycling", likelihood:"high", why:"frequent on/off, cold supply" }],
+         severity: "medium",
+         immediate_steps: ["Check thermostat differential", "Bleed radiators"],
+         dispatch_recommended: true,
+         vendor_category: "HVAC",
+         safety_warnings: ["Shut off if CO alarm triggers"]
+       }
+   - Frontend: After upload, render triage and show “Create Work Order” → creates a Request prefilled from triage.
+
+4) Right-side **Task Drawer**:
+   - A slim panel listing last ~10 actions with status and “View” links:
+     • “REQ-1002: sourcing 3 quotes… ✓”
+     • “Visit scheduled Fri 2–4pm ✓”
+     • “Notice drafted (unsent) → Send”
+   - Update live as actions complete (same in-memory store is fine).
+
+5) “Web Automation Demo” (Zillow):
+   - Add a small “Web” button next to **Do ▾** labeled “Web (demo)”.
+   - On click, open a modal with:
+     • “Open Zillow (headless)” button that calls a new server route:
+       - POST /api/agent/web/open { url?:string } default to "https://www.zillow.com/"
+       - Backend uses Playwright (chromium) to launch headless, navigate to Zillow, take a screenshot, store it under /webshots, and return { sessionId, screenshotUrl }.
+     • “Go to Zillow login (browser)” link (target=_blank) to https://www.zillow.com/user/acct/login/ (so *user* can log in themselves).
+     • A “Next step: go to Login page” button that calls:
+       - POST /api/agent/web/step { sessionId, action:"goto", url:"https://www.zillow.com/user/acct/login/" }
+         → navigates, screenshots, returns new screenshotUrl.
+     • A “Refresh screenshot” button that calls:
+       - POST /api/agent/web/screenshot { sessionId } → new screenshotUrl.
+   - Note: We are not automating login; we are demonstrating “agent goes to Zillow” with a safe prompt to the user. If Playwright errors on Replit, log why and show a friendly fallback: “Couldn’t start headless browser here. Use the ‘Go to Zillow login’ link to continue manually.”
+
+6) Minimal backend endpoints to support the above:
+   - POST /api/agent/act { text, context? }
+     * Simple regex parse to call the same internal endpoints as existing UI buttons.
+     * Return { ok, message, links/ids } and write audit entries.
+   - POST /api/agent/vision (multipart) → static triage JSON + summary string
+   - Web demo:
+     * POST /api/agent/web/open
+     * POST /api/agent/web/step
+     * POST /api/agent/web/screenshot
+     Store Playwright “session” handles in memory keyed by sessionId; screenshots saved to ./webshots (create folder if missing). Sess

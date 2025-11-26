@@ -1,7 +1,61 @@
-node_modules
-dist
+# --- Node / package managers ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.bun/
+.bun-debug.log*
+
+# --- Build outputs ---
+dist/
+build/
+out/
+server/public/
+.vite/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+
+# --- Logs & temp ---
+logs/
+*.log
+*.pid
+*.pid.lock
+*.seed
+tmp/
+.tmp/
+*.swp
+*~
+.eslintcache
+coverage/
+.nyc_output/
+
+# --- Environment & secrets (keep .env.example tracked) ---
+.env
+.env.*
+!.env.example
+
+# --- Databases & local data ---
+*.sqlite
+*.db
+data/
+server/data/
+
+# --- OS / editor junk ---
 .DS_Store
-server/public
-vite.config.ts.*
+Thumbs.db
+.idea/
+.vscode/
+*.orig
+
+# --- Archives / bundles ---
 *.tar.gz
+*.tgz
+*.zip
+
+# --- Project-specific generated code ---
 /generated/prisma
+
+# --- Vite config variants (keep primary vite.config.ts tracked) ---
+vite.config.ts.*
