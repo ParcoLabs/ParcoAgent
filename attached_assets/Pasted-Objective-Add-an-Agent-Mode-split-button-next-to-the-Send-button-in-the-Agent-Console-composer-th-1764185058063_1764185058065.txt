@@ -1,0 +1,103 @@
+Objective:
+Add an “Agent Mode” split-button next to the Send button in the Agent Console composer that opens a Web Automation modal. The modal must support generic headless-browser steps for ANY site (user provides URL), shows live screenshots, and lets the user build/run simple step sequences (goto, click, type, wait, screenshot). Do NOT alter existing maintenance/vendor/request tabs. Do NOT touch Git. Do NOT use paid APIs.
+
+Scope & constraints:
+- Work directly in the open project. Keep USE_DB=false flows intact.
+- Add minimal server endpoints using Playwright (chromium). If Playwright isn’t installed, install it and set up chromium only.
+- Store screenshots under ./webshots and serve them statically.
+- Keep new code isolated and easy to remove.
+
+UI changes (Agent Console page):
+1) In the chat composer row (to the right of the Send button), add a split-button:
+   - Label: “Agent Mode ▾”.
+   - Menu items:
+     • “Web Automation”
+2) “Web Automation” opens a modal with:
+   - Field: Start URL (text input, default empty)
+   - Button: “Start Session” → creates a headless browser session, navigates to Start URL (or a blank page if empty), and shows a screenshot.
+   - Screenshot pane: shows the latest screenshot; refreshes when steps run.
+   - Steps panel (left or top):
+     • “Goto URL” (input url)
+     • “Click selector” (input CSS/XPath; default to CSS)
+     • “Type into selector” (selector + text)
+     • “Wait for selector” (selector)
+     • “Screenshot” (no args)
+     • “Wait (ms)” (number)
+   - Each step has “Run” to execute immediately against the current session.
+   - A “Save Recipe” button that saves the list of steps (name + array) to an in-memory store (no DB).
+   - A “Load Recipe” dropdown to pick/run previously saved recipes.
+   - Buttons:
+     • “Refresh Screenshot” (pulls a new screenshot)
+     • “Open Current URL (new tab)” (normal <a target="_blank"> to the page’s URL)
+     • “Close Session”
+   - If headless cannot start on this Replit, show a friendly fallback message and keep “Open Current URL (new tab)” available.
+
+Server changes:
+Create a new router file (e.g., server/routes/webAgent.ts) and wire it in.
+Add these endpoints (names can be adjusted but preserve functionality):
+
+- POST /api/agent/web/open
+  Body: { url?: string }
+  Behavior:
+    * Launch a Playwright chromium headless browser, open a new page.
+    * If url provided, page.goto(url).
+    * Take a screenshot: ./webshots/<sessionId>-1.png.
+    * Return { ok:true, sessionId, screenshotUrl, currentUrl }.
+    * Maintain an in-memory sessions map: sessionId -> { browser, page, shotIndex, currentUrl }.
+
+- POST /api/agent/web/step
+  Body: { sessionId, action, args?: object }
+  Supported actions:
+    * "goto" { url }
+    * "click" { selector, engine?: "css"|"xpath" (default "css") }
+    * "type" { selector, text, engine?: "css"|"xpath" }
+    * "waitFor" { selector, engine?: "css"|"xpath" }
+    * "wait" { ms }
+    * "screenshot" {}
+  Behavior:
+    * Execute the action on the session’s page.
+    * After each action (except pure wait), increment shotIndex and save a new screenshot ./webshots/<sessionId>-N.png.
+    * Update currentUrl from page.url().
+    * Return { ok:true, screenshotUrl, currentUrl } (or { ok:false, error } on failure).
+    * For engine "xpath", resolve via page.locator(`xpath=${selector}`); else use page.locator(selector).
+
+- POST /api/agent/web/screenshot
+  Body: { sessionId }
+  Behavior:
+    * Take a fresh screenshot ./webshots/<sessionId>-N.png.
+    * Return { ok:true, screenshotUrl, currentUrl }.
+
+- POST /api/agent/web/close
+  Body: { sessionId }
+  Behavior:
+    * Close browser, delete session.
+
+- GET /api/agent/web/recipes
+  Return the in-memory list: [{ name, steps:[{action,args}, ...], createdAt }]
+
+- POST /api/agent/web/recipes
+  Body: { name, steps:[{action,args}, ...] }
+  Save in memory and return updated list.
+
+Static:
+- Ensure ./webshots exists at server start and is served statically (e.g., /webshots/<file>).
+
+Dependencies:
+- If missing: npm i -D playwright
+- Then: npx playwright install chromium
+
+Security & safety:
+- No credential automation. No keylogging. Steps are explicit user-run only.
+- Do not store cookies or credentials beyond the Playwright session lifetime.
+- Log errors with a clear tag: [WEBAGENT].
+
+Acceptance tests (manual):
+1) Open Agent page → composer shows “Agent Mode ▾”.
+2) Open “Web Automation” modal.
+3) Enter any URL (e.g., https://example.com) → Start Session → screenshot appears.
+4) Run steps:
+   - Goto URL (e.g., https://www.zillow.com/ or any site)
+   - Wait for selector (a simple visible element)
+   - Screenshot → image updates
+   - Click selector and/or Type into selector (try a search box on any site)
+   - Refr
