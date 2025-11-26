@@ -240,6 +240,15 @@ router.post("/agent/web/close", async (req, res) => {
   }
 });
 
+router.get("/agent/web/sessions", (_req, res) => {
+  const activeSessions = Array.from(sessions.entries()).map(([sessionId, session]) => ({
+    sessionId,
+    currentUrl: session.currentUrl,
+    shotIndex: session.shotIndex,
+  }));
+  res.json({ ok: true, sessions: activeSessions });
+});
+
 router.get("/agent/web/recipes", (_req, res) => {
   res.json(recipesStore);
 });
