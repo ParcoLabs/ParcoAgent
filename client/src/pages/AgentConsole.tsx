@@ -3,9 +3,10 @@ import * as React from "react";
 import Sidebar from "@/components/dashboard/sidebar";
 import {
   Loader2, Bot, User, Paperclip, Settings2, Send,
-  Building2, ListChecks, Plus, Trash2, ChevronDown, Globe, X,
-  Play, RefreshCw, ExternalLink, Save, FolderOpen
+  Building2, ListChecks, Plus, Trash2, X,
+  Play, Pause, Square, ExternalLink, CheckCircle2, AlertCircle, Clock
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 /* ---------------- Types ---------------- */
 type ChatRole = "system" | "user" | "assistant";
@@ -13,9 +14,21 @@ type ChatMessage = { id: string; role: ChatRole; content: string; status?: "send
 type AgentContext = { propertyId?: string; propertyName?: string; requestId?: string | number; [k: string]: any };
 type Conversation = { id: string; title: string; createdAt: number; updatedAt: number; messages: ChatMessage[]; context?: AgentContext };
 
+type StepStatus = "queued" | "running" | "done" | "failed";
+type RunStep = { id: string; action: string; args?: Record<string, any>; status: StepStatus; result?: string; error?: string };
+type RunStatus = "running" | "paused" | "completed" | "failed" | "stopped";
+type AgentRun = {
+  runId: string;
+  status: RunStatus;
+  steps: RunStep[];
+  currentUrl: string;
+  lastScreenshot: string;
+  logs: string[];
+};
+
 /* ---------------- Constants ---------------- */
 const LS_KEY = "parco.agent.convos";
-const BRIDGE_KEY = "parco.agent.bridge"; // dashboard↔agent activity bridge
+const BRIDGE_KEY = "parco.agent.bridge";
 
 /* ---------------- Helpers ---------------- */
 const uid = () =>
@@ -52,11 +65,37 @@ async function callAgent(params: {
   return data as { message: string };
 }
 
+async function executeAgentRun(message: string): Promise<{ ok: boolean; runId?: string; error?: string }> {
+  const res = await fetch("/api/agent/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  return res.json();
+}
+
+async function fetchRunStatus(runId: string): Promise<{ ok: boolean; run?: AgentRun; error?: string }> {
+  const res = await fetch(`/api/agent/runs/${runId}`);
+  return res.json();
+}
+
+async function pauseRun(runId: string) {
+  await fetch(`/api/agent/runs/${runId}/pause`, { method: "POST" });
+}
+
+async function resumeRun(runId: string) {
+  await fetch(`/api/agent/runs/${runId}/resume`, { method: "POST" });
+}
+
+async function stopRun(runId: string) {
+  await fetch(`/api/agent/runs/${runId}/stop`, { method: "POST" });
+}
+
 /* ---------------- Chat Hook ---------------- */
 function useAgentChat(initialContext?: AgentContext) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([{
     id: uid(), role: "assistant",
-    content: "Hi! I’m your PM agent. I can draft tenant/vendor messages, source 3 quotes, schedule visits, and create/publish rental listings. What would you like to do?",
+    content: "Hi! I'm your PM agent. I can draft tenant/vendor messages, source 3 quotes, schedule visits, and create/publish rental listings. What would you like to do?",
     status: "done",
   }]);
   const [input, setInput] = React.useState("");
@@ -79,7 +118,6 @@ function useAgentChat(initialContext?: AgentContext) {
   }, []);
   React.useEffect(() => { scrollToBottom(); }, [messages.length, scrollToBottom]);
 
-  // Bridge: surface dashboard-triggered activity into the chat stream
   React.useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== BRIDGE_KEY || !e.newValue) return;
@@ -94,14 +132,13 @@ function useAgentChat(initialContext?: AgentContext) {
     return () => window.removeEventListener("storage", onStorage);
   }, [append]);
 
-  // IMPORTANT: send supports conversationId so server can keep dialog state
   const send = React.useCallback(async (text: string, conversationId?: string) => {
     if (!text.trim()) return;
     setIsSending(true);
     append({ role: "user", content: text, status: "done" });
     const pid = append({ role: "assistant", content: "", status: "sending" });
     try {
-      const payload = messages.concat([{ role: "user", content: text }]).map(({ role, content }) => ({ role, content }));
+      const payload = messages.concat([{ id: uid(), role: "user" as const, content: text, status: "done" as const }]).map(({ role, content }) => ({ role, content }));
       const data = await callAgent({
         conversationId,
         messages: payload,
@@ -118,8 +155,203 @@ function useAgentChat(initialContext?: AgentContext) {
     }
   }, [append, ctx, messages, replace, scrollToBottom]);
 
-  return { messages, input, setInput, isSending, send, listRef, context: ctx };
+  return { messages, input, setInput, isSending, send, listRef, context: ctx, append };
 }
+
+/* ---------------- Run Viewer Drawer ---------------- */
+const RunViewerDrawer: React.FC<{
+  runId: string | null;
+  onClose: () => void;
+}> = ({ runId, onClose }) => {
+  const [run, setRun] = React.useState<AgentRun | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!runId) {
+      setRun(null);
+      return;
+    }
+
+    let active = true;
+    const poll = async () => {
+      if (!active) return;
+      try {
+        const data = await fetchRunStatus(runId);
+        if (data.ok && data.run) {
+          setRun(data.run);
+          setError(null);
+        } else {
+          setError(data.error || "Failed to fetch run status");
+        }
+      } catch (e: any) {
+        setError(e?.message || "Failed to fetch run status");
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 1000);
+    return () => { active = false; clearInterval(interval); };
+  }, [runId]);
+
+  if (!runId) return null;
+
+  const isRunning = run?.status === "running";
+  const isPaused = run?.status === "paused";
+  const isFinished = run?.status === "completed" || run?.status === "failed" || run?.status === "stopped";
+
+  const getStepIcon = (status: StepStatus) => {
+    switch (status) {
+      case "queued": return <Clock size={14} className="text-gray-400" />;
+      case "running": return <Loader2 size={14} className="text-blue-500 animate-spin" />;
+      case "done": return <CheckCircle2 size={14} className="text-green-500" />;
+      case "failed": return <AlertCircle size={14} className="text-red-500" />;
+    }
+  };
+
+  return (
+    <div className="fixed inset-y-0 right-0 w-[420px] max-w-full bg-white shadow-xl z-50 flex flex-col border-l">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+        <div className="flex items-center gap-2">
+          <Bot size={20} className="text-emerald-600" />
+          <span className="font-semibold">Run Viewer</span>
+          {run && (
+            <span className={`text-xs px-2 py-0.5 rounded-full ${
+              isRunning ? "bg-blue-100 text-blue-700" :
+              isPaused ? "bg-yellow-100 text-yellow-700" :
+              run.status === "completed" ? "bg-green-100 text-green-700" :
+              run.status === "failed" ? "bg-red-100 text-red-700" :
+              "bg-gray-100 text-gray-700"
+            }`}>
+              {run.status}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-500"
+          data-testid="button-close-drawer"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {/* Steps */}
+        {run && run.steps.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-700">Steps</div>
+            <div className="space-y-1">
+              {run.steps.map((step, i) => (
+                <div
+                  key={step.id}
+                  className={`flex items-start gap-2 p-2 rounded-lg text-sm ${
+                    step.status === "running" ? "bg-blue-50" :
+                    step.status === "failed" ? "bg-red-50" :
+                    step.status === "done" ? "bg-green-50" :
+                    "bg-gray-50"
+                  }`}
+                >
+                  <div className="mt-0.5">{getStepIcon(step.status)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">
+                      {i + 1}. {step.action}
+                      {step.args?.url && <span className="font-normal text-gray-500 ml-1">→ {step.args.url}</span>}
+                      {step.args?.selector && <span className="font-normal text-gray-500 ml-1">→ {step.args.selector}</span>}
+                    </div>
+                    {step.error && <div className="text-red-600 text-xs mt-0.5">{step.error}</div>}
+                    {step.result && step.status === "done" && (
+                      <div className="text-gray-500 text-xs mt-0.5">{step.result}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Screenshot */}
+        {run?.lastScreenshot && (
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-700">Screenshot</div>
+            {run.currentUrl && (
+              <div className="text-xs text-gray-500 truncate">{run.currentUrl}</div>
+            )}
+            <div className="border rounded-lg overflow-hidden bg-gray-100">
+              <img
+                src={run.lastScreenshot + "?t=" + Date.now()}
+                alt="Browser screenshot"
+                className="w-full h-auto"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Logs */}
+        {run && run.logs.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-700">Logs</div>
+            <div className="bg-gray-900 rounded-lg p-3 max-h-48 overflow-y-auto">
+              {run.logs.map((log, i) => (
+                <div key={i} className="text-xs text-gray-300 font-mono">{log}</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Controls */}
+      <div className="p-4 border-t bg-gray-50 flex items-center gap-2">
+        {!isFinished && (
+          <>
+            {isRunning ? (
+              <button
+                onClick={() => runId && pauseRun(runId)}
+                className="px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 flex items-center gap-1.5 text-sm"
+                data-testid="button-pause"
+              >
+                <Pause size={14} /> Pause
+              </button>
+            ) : isPaused ? (
+              <button
+                onClick={() => runId && resumeRun(runId)}
+                className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-1.5 text-sm"
+                data-testid="button-resume"
+              >
+                <Play size={14} /> Resume
+              </button>
+            ) : null}
+            <button
+              onClick={() => runId && stopRun(runId)}
+              className="px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-1.5 text-sm"
+              data-testid="button-stop"
+            >
+              <Square size={14} /> Stop
+            </button>
+          </>
+        )}
+        {run?.currentUrl && (
+          <a
+            href={run.currentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-2 border rounded-lg hover:bg-white flex items-center gap-1.5 text-sm ml-auto"
+            data-testid="link-open-url"
+          >
+            <ExternalLink size={14} /> Open URL
+          </a>
+        )}
+      </div>
+    </div>
+  );
+};
 
 /* ---------------- UI Bits ---------------- */
 const Chip: React.FC<React.PropsWithChildren> = ({ children }) =>
@@ -140,465 +372,53 @@ const MessageBubble: React.FC<{ m: ChatMessage }> = ({ m }) => {
   );
 };
 
-/* ---------------- Web Automation Types ---------------- */
-type WebStep = { action: string; args?: Record<string, any> };
-type WebRecipe = { name: string; steps: WebStep[]; createdAt: string };
-
-/* ---------------- Web Automation Modal ---------------- */
-const WebAutomationModal: React.FC<{ open: boolean; onClose: () => void }> = ({ open, onClose }) => {
-  const [sessionId, setSessionId] = React.useState<string | null>(null);
-  const [screenshotUrl, setScreenshotUrl] = React.useState<string | null>(null);
-  const [currentUrl, setCurrentUrl] = React.useState<string>("");
-  const [startUrl, setStartUrl] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const [stepAction, setStepAction] = React.useState<string>("goto");
-  const [stepSelector, setStepSelector] = React.useState("");
-  const [stepUrl, setStepUrl] = React.useState("");
-  const [stepText, setStepText] = React.useState("");
-  const [stepMs, setStepMs] = React.useState<number>(1000);
-  const [stepEngine, setStepEngine] = React.useState<"css" | "xpath">("css");
-
-  const [recipes, setRecipes] = React.useState<WebRecipe[]>([]);
-  const [currentSteps, setCurrentSteps] = React.useState<WebStep[]>([]);
-  const [recipeName, setRecipeName] = React.useState("");
-  const [showRecipeInput, setShowRecipeInput] = React.useState(false);
-
-  React.useEffect(() => {
-    if (open) {
-      fetch("/api/agent/web/recipes")
-        .then(r => r.json())
-        .then(setRecipes)
-        .catch(() => {});
-    }
-  }, [open]);
-
-  const startSession = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/agent/web/open", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: startUrl || undefined }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setSessionId(data.sessionId);
-        setScreenshotUrl(data.screenshotUrl + "?t=" + Date.now());
-        setCurrentUrl(data.currentUrl);
-      } else {
-        setError(data.error || "Failed to start session");
-      }
-    } catch (e: any) {
-      setError(e?.message || "Failed to start session");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const runStep = async (action: string, args?: Record<string, any>) => {
-    if (!sessionId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/agent/web/step", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, action, args }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setScreenshotUrl(data.screenshotUrl + "?t=" + Date.now());
-        setCurrentUrl(data.currentUrl);
-        setCurrentSteps(prev => [...prev, { action, args }]);
-      } else {
-        setError(data.error || "Step failed");
-      }
-    } catch (e: any) {
-      setError(e?.message || "Step failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refreshScreenshot = async () => {
-    if (!sessionId) return;
-    setLoading(true);
-    try {
-      const res = await fetch("/api/agent/web/screenshot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setScreenshotUrl(data.screenshotUrl + "?t=" + Date.now());
-        setCurrentUrl(data.currentUrl);
-      }
-    } catch {}
-    setLoading(false);
-  };
-
-  const closeSession = async () => {
-    if (!sessionId) return;
-    try {
-      await fetch("/api/agent/web/close", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-    } catch {}
-    setSessionId(null);
-    setScreenshotUrl(null);
-    setCurrentUrl("");
-    setCurrentSteps([]);
-  };
-
-  const saveRecipe = async () => {
-    if (!recipeName.trim() || currentSteps.length === 0) return;
-    try {
-      const res = await fetch("/api/agent/web/recipes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: recipeName.trim(), steps: currentSteps }),
-      });
-      const data = await res.json();
-      setRecipes(data);
-      setRecipeName("");
-      setShowRecipeInput(false);
-    } catch {}
-  };
-
-  const loadRecipe = async (recipe: WebRecipe) => {
-    for (const step of recipe.steps) {
-      await runStep(step.action, step.args);
-    }
-  };
-
-  const handleRunCurrentStep = () => {
-    switch (stepAction) {
-      case "goto":
-        runStep("goto", { url: stepUrl });
-        break;
-      case "click":
-        runStep("click", { selector: stepSelector, engine: stepEngine });
-        break;
-      case "type":
-        runStep("type", { selector: stepSelector, text: stepText, engine: stepEngine });
-        break;
-      case "waitFor":
-        runStep("waitFor", { selector: stepSelector, engine: stepEngine });
-        break;
-      case "wait":
-        runStep("wait", { ms: stepMs });
-        break;
-      case "screenshot":
-        runStep("screenshot", {});
-        break;
-    }
-  };
-
-  const handleClose = () => {
-    closeSession();
-    onClose();
-  };
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
-      <div className="relative z-[101] w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Globe size={20} /> Web Automation
-          </h2>
-          <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-md">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-4">
-          {!sessionId ? (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Start URL (optional)</label>
-                <input
-                  data-testid="input-start-url"
-                  value={startUrl}
-                  onChange={(e) => setStartUrl(e.target.value)}
-                  placeholder="https://example.com"
-                  className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
-              </div>
-              <button
-                data-testid="button-start-session"
-                onClick={startSession}
-                disabled={loading}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
-              >
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                Start Session
-              </button>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Left: Controls */}
-              <div className="space-y-4">
-                <div className="p-3 bg-gray-50 rounded-lg space-y-3">
-                  <div className="flex items-center gap-2">
-                    <select
-                      data-testid="select-step-action"
-                      value={stepAction}
-                      onChange={(e) => setStepAction(e.target.value)}
-                      className="flex-1 rounded border px-2 py-1.5 text-sm"
-                    >
-                      <option value="goto">Goto URL</option>
-                      <option value="click">Click Selector</option>
-                      <option value="type">Type into Selector</option>
-                      <option value="waitFor">Wait for Selector</option>
-                      <option value="wait">Wait (ms)</option>
-                      <option value="screenshot">Screenshot</option>
-                    </select>
-                    <select
-                      value={stepEngine}
-                      onChange={(e) => setStepEngine(e.target.value as "css" | "xpath")}
-                      className="rounded border px-2 py-1.5 text-sm"
-                    >
-                      <option value="css">CSS</option>
-                      <option value="xpath">XPath</option>
-                    </select>
-                  </div>
-
-                  {stepAction === "goto" && (
-                    <input
-                      data-testid="input-step-url"
-                      value={stepUrl}
-                      onChange={(e) => setStepUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full rounded border px-2 py-1.5 text-sm"
-                    />
-                  )}
-
-                  {(stepAction === "click" || stepAction === "type" || stepAction === "waitFor") && (
-                    <input
-                      data-testid="input-step-selector"
-                      value={stepSelector}
-                      onChange={(e) => setStepSelector(e.target.value)}
-                      placeholder="CSS or XPath selector..."
-                      className="w-full rounded border px-2 py-1.5 text-sm"
-                    />
-                  )}
-
-                  {stepAction === "type" && (
-                    <input
-                      data-testid="input-step-text"
-                      value={stepText}
-                      onChange={(e) => setStepText(e.target.value)}
-                      placeholder="Text to type..."
-                      className="w-full rounded border px-2 py-1.5 text-sm"
-                    />
-                  )}
-
-                  {stepAction === "wait" && (
-                    <input
-                      data-testid="input-step-ms"
-                      type="number"
-                      value={stepMs}
-                      onChange={(e) => setStepMs(Number(e.target.value))}
-                      placeholder="Milliseconds"
-                      className="w-full rounded border px-2 py-1.5 text-sm"
-                    />
-                  )}
-
-                  <button
-                    data-testid="button-run-step"
-                    onClick={handleRunCurrentStep}
-                    disabled={loading}
-                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                    Run Step
-                  </button>
-                </div>
-
-                {/* Actions bar */}
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={refreshScreenshot}
-                    disabled={loading}
-                    className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
-                  >
-                    <RefreshCw size={14} /> Refresh
-                  </button>
-                  {currentUrl && (
-                    <a
-                      href={currentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
-                    >
-                      <ExternalLink size={14} /> Open URL
-                    </a>
-                  )}
-                  <button
-                    onClick={closeSession}
-                    className="px-3 py-1.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1.5"
-                  >
-                    <X size={14} /> Close Session
-                  </button>
-                </div>
-
-                {/* Recipe controls */}
-                <div className="p-3 bg-gray-50 rounded-lg space-y-2">
-                  <div className="text-sm font-medium">Recipes</div>
-                  {currentSteps.length > 0 && (
-                    <div className="text-xs text-gray-600">
-                      Current: {currentSteps.length} step(s)
-                    </div>
-                  )}
-                  {showRecipeInput ? (
-                    <div className="flex gap-2">
-                      <input
-                        value={recipeName}
-                        onChange={(e) => setRecipeName(e.target.value)}
-                        placeholder="Recipe name"
-                        className="flex-1 rounded border px-2 py-1 text-sm"
-                      />
-                      <button
-                        onClick={saveRecipe}
-                        className="px-2 py-1 bg-emerald-600 text-white rounded text-sm"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setShowRecipeInput(false)}
-                        className="px-2 py-1 border rounded text-sm"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowRecipeInput(true)}
-                      disabled={currentSteps.length === 0}
-                      className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-100 flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      <Save size={14} /> Save Recipe
-                    </button>
-                  )}
-                  {recipes.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {recipes.map((r, i) => (
-                        <button
-                          key={i}
-                          onClick={() => loadRecipe(r)}
-                          className="px-2 py-1 text-xs border rounded hover:bg-gray-100 flex items-center gap-1"
-                        >
-                          <FolderOpen size={12} /> {r.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {error && <p className="text-sm text-red-600">{error}</p>}
-              </div>
-
-              {/* Right: Screenshot */}
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Screenshot</div>
-                {currentUrl && (
-                  <div className="text-xs text-gray-500 truncate">{currentUrl}</div>
-                )}
-                {screenshotUrl ? (
-                  <div className="border rounded-lg overflow-hidden bg-gray-100">
-                    <img
-                      src={screenshotUrl}
-                      alt="Browser screenshot"
-                      className="w-full h-auto"
-                    />
-                  </div>
-                ) : (
-                  <div className="h-64 border rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">
-                    No screenshot
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ---------------- Agent Mode Button ---------------- */
-const AgentModeButton: React.FC<{ onOpenWebAutomation: () => void }> = ({ onOpenWebAutomation }) => {
-  const [menuOpen, setMenuOpen] = React.useState(false);
-
-  return (
-    <div className="relative">
-      <button
-        data-testid="button-agent-mode"
-        onClick={() => setMenuOpen(!menuOpen)}
-        className="px-3 py-2 rounded-lg border bg-gray-800 text-white hover:bg-gray-700 flex items-center gap-1"
-      >
-        Agent Mode <ChevronDown size={14} />
-      </button>
-      {menuOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-0 bottom-full mb-1 z-50 bg-white rounded-lg shadow-lg border py-1 min-w-[160px]">
-            <button
-              data-testid="menu-web-automation"
-              onClick={() => {
-                setMenuOpen(false);
-                onOpenWebAutomation();
-              }}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-            >
-              <Globe size={16} /> Web Automation
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-const InputBar: React.FC<{ 
-  value: string; 
-  onChange: (v: string) => void; 
-  onSend: () => void; 
+/* ---------------- Input Bar with Agent Mode Toggle ---------------- */
+const InputBar: React.FC<{
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
   disabled?: boolean;
-  onOpenWebAutomation: () => void;
-}> = ({ value, onChange, onSend, disabled, onOpenWebAutomation }) => (
-    <div className="p-3 border-t bg-white">
-      <div className="flex items-center gap-2">
-        <button className="p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Attach"><Paperclip size={18} /></button>
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-          placeholder="Ask or instruct the agent…"
-          className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+  agentMode: boolean;
+  onAgentModeChange: (v: boolean) => void;
+}> = ({ value, onChange, onSend, disabled, agentMode, onAgentModeChange }) => (
+  <div className="p-3 border-t bg-white">
+    <div className="flex items-center gap-2">
+      <button className="p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Attach"><Paperclip size={18} /></button>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+        placeholder={agentMode ? "Tell the agent what to do (e.g., go to zillow.com)" : "Ask or instruct the agent…"}
+        className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+        data-testid="input-chat"
+      />
+      <button className="p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Settings"><Settings2 size={18} /></button>
+      <button
+        onClick={onSend}
+        disabled={disabled}
+        className={`px-3 py-2 rounded-lg text-white flex items-center gap-2 ${disabled ? "bg-emerald-300" : "bg-emerald-600 hover:bg-emerald-700"}`}
+        data-testid="button-send"
+      >
+        <Send size={16} /> Send
+      </button>
+      <div className="flex items-center gap-2 ml-1 pl-2 border-l">
+        <Switch
+          checked={agentMode}
+          onCheckedChange={onAgentModeChange}
+          data-testid="switch-agent-mode"
         />
-        <button className="p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Settings"><Settings2 size={18} /></button>
-        <button
-          onClick={onSend}
-          disabled={disabled}
-          className={`px-3 py-2 rounded-lg text-white flex items-center gap-2 ${disabled ? "bg-emerald-300" : "bg-emerald-600 hover:bg-emerald-700"}`}
-        >
-          <Send size={16} /> Send
-        </button>
-        <AgentModeButton onOpenWebAutomation={onOpenWebAutomation} />
+        <span className={`text-sm font-medium ${agentMode ? "text-emerald-700" : "text-gray-500"}`}>
+          Agent Mode
+        </span>
       </div>
     </div>
-  );
+    {agentMode && (
+      <div className="mt-2 text-xs text-gray-500 bg-emerald-50 rounded px-2 py-1">
+        Agent Mode is ON. Commands will be executed using web automation.
+      </div>
+    )}
+  </div>
+);
 
 const ContextBar: React.FC<{ context: AgentContext }> = ({ context }) => (
   <div className="px-3 pt-3 pb-2">
@@ -647,7 +467,6 @@ const ConversationSidebar: React.FC<{
 
 /* ---------------- Page ---------------- */
 export default function AgentConsole() {
-  // Deep-link context: /agent?propertyId=..&propertyName=..&requestId=..
   const search = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const qCtx: AgentContext = {
     propertyId: search?.get("propertyId") || undefined,
@@ -655,7 +474,6 @@ export default function AgentConsole() {
     requestId: search?.get("requestId") || undefined,
   };
 
-  // conversations persisted locally
   const [convos, setConvos] = React.useState<Conversation[]>(() => {
     const data = loadConvos();
     if (data.length) return data;
@@ -668,7 +486,6 @@ export default function AgentConsole() {
   const active = React.useMemo(() => convos.find(c => c.id === activeId) || convos[0], [convos, activeId]);
   const chat = useAgentChat(active?.context);
 
-  // Keep conversation title/messages in sync
   React.useEffect(() => {
     if (!active) return;
     const title = (() => {
@@ -691,8 +508,40 @@ export default function AgentConsole() {
     }
   };
 
-  // Web Automation Modal
-  const [webAutomationOpen, setWebAutomationOpen] = React.useState(false);
+  // Agent Mode state
+  const [agentMode, setAgentMode] = React.useState(false);
+  const [currentRunId, setCurrentRunId] = React.useState<string | null>(null);
+  const [isExecuting, setIsExecuting] = React.useState(false);
+
+  // Handle send based on Agent Mode
+  const handleSend = async () => {
+    const text = chat.input.trim();
+    if (!text) return;
+
+    if (agentMode) {
+      // Agent Mode: execute run
+      setIsExecuting(true);
+      chat.append({ role: "user", content: text, status: "done" });
+      chat.setInput("");
+
+      try {
+        const data = await executeAgentRun(text);
+        if (data.ok && data.runId) {
+          setCurrentRunId(data.runId);
+          chat.append({ role: "assistant", content: `🤖 Started agent run. Check the Run Viewer for progress.`, status: "done" });
+        } else {
+          chat.append({ role: "assistant", content: `❌ Failed to start run: ${data.error || "Unknown error"}`, status: "error" });
+        }
+      } catch (err: any) {
+        chat.append({ role: "assistant", content: `❌ Error: ${err?.message || "Unknown error"}`, status: "error" });
+      } finally {
+        setIsExecuting(false);
+      }
+    } else {
+      // Normal mode: chat
+      chat.send(text, active?.id);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 md:flex-row flex-col">
@@ -703,7 +552,7 @@ export default function AgentConsole() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header — align with other pages */}
+        {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-5">
           <div className="mx-auto w-full max-w-[1360px] flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -733,9 +582,10 @@ export default function AgentConsole() {
                 <InputBar
                   value={chat.input}
                   onChange={chat.setInput}
-                  onSend={() => chat.send(chat.input, active?.id)}   // <-- send with conversationId
-                  disabled={chat.isSending}
-                  onOpenWebAutomation={() => setWebAutomationOpen(true)}
+                  onSend={handleSend}
+                  disabled={chat.isSending || isExecuting}
+                  agentMode={agentMode}
+                  onAgentModeChange={setAgentMode}
                 />
               </div>
 
@@ -756,8 +606,11 @@ export default function AgentConsole() {
         </main>
       </div>
 
-      {/* Web Automation Modal */}
-      <WebAutomationModal open={webAutomationOpen} onClose={() => setWebAutomationOpen(false)} />
+      {/* Run Viewer Drawer */}
+      <RunViewerDrawer
+        runId={currentRunId}
+        onClose={() => setCurrentRunId(null)}
+      />
     </div>
   );
 }
