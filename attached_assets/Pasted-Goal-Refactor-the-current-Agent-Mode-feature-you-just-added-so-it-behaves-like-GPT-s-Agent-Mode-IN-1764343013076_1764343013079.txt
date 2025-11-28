@@ -1,0 +1,41 @@
+Goal
+Refactor the current “Agent Mode” feature you just added so it behaves like GPT’s Agent Mode INSIDE the chat composer. Do NOT add a second/parallel feature. Reuse the Playwright backend and routes you already created. No Git changes. No paid API calls.
+
+What to change (surgical edits):
+1) Composer UX
+   - Replace the current “Agent Mode” menu button in the composer with:
+     • A simple toggle switch labeled “Agent Mode”.
+     • Keep the existing Send button and chat input exactly as-is.
+   - Behavior:
+     • When Agent Mode = OFF → Send posts to the existing chat endpoint (no change).
+     • When Agent Mode = ON  → Send posts to a new controller that kicks off a run (see #2) and auto-opens a right-side Run Viewer drawer.
+
+2) Planner + Executor (REUSE your existing web automation routes)
+   - Create a thin controller: POST /api/agent/execute { message, context? }
+   - Inside, DO NOT create new Playwright logic. Instead:
+     • Use a rule-based parser (regex) to map the message to the web steps your current web routes already support (goto/click/type/wait/screenshot) and to existing Parco internal actions (create request, create draft, send draft) by calling our existing endpoints.
+     • For web steps, call your existing web session routes (open/step/screenshot) under the hood; do not duplicate browser code.
+   - Return { runId } and begin execution server-side, storing run state in memory (steps, status, currentUrl, lastScreenshot).
+
+3) Run Viewer (replace the current Web modal)
+   - Remove or repurpose the old Web modal; we won’t open it from the composer anymore.
+   - Add a right-side drawer (Run Viewer) that opens automatically when a run starts and shows:
+     • Steps with statuses (queued/running/done/failed)
+     • Live screenshot (use the same /webshots/* paths you already serve)
+     • Current URL
+     • Logs (short text lines)
+     • Controls: Pause/Resume, Stop, and “Open current URL (new tab)”
+   - Poll GET /api/agent/runs/:runId to refresh the drawer.
+
+4) URL Normalization (fix the “Zillow.com” error globally)
+   - Add a small sanitizer used by both the rule-based planner and any place that accepts a URL:
+     • If the user types “zillow.com” or “www.x.com”, auto-normalize to “https://…”
+     • If tokens like “login” appear, keep suffixes when obvious.
+     • If scheme is not http/https, show a friendly error; do NOT throw raw stacks.
+
+5) Keep everything else intact
+   - Do NOT add new tabs or duplicate actions that already exist elsewhere in the dashboard.
+   - Keep USE_DB=false flows working.
+   - Keep all existing pages and endpoints; only rewire the current Agent Mode UI to the new flow.
+   - Reuse the Playwright session manager and screenshot serving you already implemented.
+   - No LLM usage (planner is regex-based). If OPENAI later exists we can add tool-calling, but not now.
