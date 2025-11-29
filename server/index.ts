@@ -7,7 +7,6 @@ import cors from "cors";
 import { createServer } from "http";
 import routes from "./routes.js";
 import webAgentRoutes from "./routes/webAgent.js";
-import agentExecutorRoutes from "./routes/agentExecutor.js";
 import { setupVite, serveStatic } from "./vite.js";
 import path from "path";
 import fs from "fs";
@@ -66,7 +65,6 @@ app.use("/webshots", express.static(webshotsDir));
 // API
 app.use("/api", routes);
 app.use("/api", webAgentRoutes);
-app.use("/api", agentExecutorRoutes);
 
 // Replit provides PORT (commonly 3000). Fall back to 5000 for local.
 const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;

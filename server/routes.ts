@@ -1309,11 +1309,234 @@ router.post("/admin/reset", async (_req, res) => {
 /* =========================== AGENT EXECUTE (enhanced) ===================== */
 import { publishTenantNotice } from "./actions/publishTenantNotice.js";
 
+type AgentRunStepStatus = "queued" | "running" | "done" | "failed";
+interface AgentRunStep {
+  id: string;
+  action: string;
+  args: Record<string, any>;
+  status: AgentRunStepStatus;
+  result?: string;
+  error?: string;
+}
+interface AgentRunState {
+  runId: string;
+  status: "running" | "paused" | "completed" | "failed" | "stopped";
+  steps: AgentRunStep[];
+  currentUrl: string;
+  lastScreenshot: string;
+  logs: string[];
+  sessionId: string | null;
+  createdAt: number;
+}
+
+const agentRuns = new Map<string, AgentRunState>();
+
+function genRunId(): string {
+  return "run-" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36);
+}
+function genStepId(): string {
+  return "step-" + Math.random().toString(36).slice(2, 8);
+}
+
+function normalizeUrl(input: string): { url: string; error?: string } {
+  if (!input || typeof input !== "string") {
+    return { url: "", error: "URL is required" };
+  }
+  let url = input.trim();
+  if (url.startsWith("file://") || url.startsWith("javascript:") || url.startsWith("data:")) {
+    return { url: "", error: "Only http and https URLs are supported" };
+  }
+  if (!url.match(/^https?:\/\//i)) {
+    if (url.startsWith("www.")) {
+      url = "https://" + url;
+    } else if (url.includes(".") && !url.includes(" ")) {
+      url = "https://" + url;
+    } else {
+      return { url: "", error: `Invalid URL format: "${input}". Please provide a valid web address.` };
+    }
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { url: "", error: "Only http and https URLs are supported" };
+    }
+    return { url: parsed.href };
+  } catch {
+    return { url: "", error: `Could not parse URL: "${input}"` };
+  }
+}
+
+function parseMessageToRunSteps(message: string): AgentRunStep[] {
+  const steps: AgentRunStep[] = [];
+  const lower = message.toLowerCase();
+
+  const gotoPatterns = [
+    /(?:go to|navigate to|open|visit|browse to)\s+(?:the\s+)?(?:website\s+)?["']?([^\s"']+)["']?/i,
+    /(?:go to|navigate to|open|visit|browse to)\s+(.+?)(?:\s+and|\s+then|$)/i,
+  ];
+  for (const pattern of gotoPatterns) {
+    const match = message.match(pattern);
+    if (match) {
+      const rawUrl = match[1].trim().replace(/[.,!?]+$/, "");
+      const { url, error } = normalizeUrl(rawUrl);
+      if (url) {
+        steps.push({ id: genStepId(), action: "goto", args: { url }, status: "queued" });
+      } else if (error) {
+        steps.push({ id: genStepId(), action: "error", args: { message: error }, status: "failed", error });
+      }
+      break;
+    }
+  }
+
+  const clickPatterns = [
+    /click\s+(?:on\s+)?(?:the\s+)?["']([^"']+)["']/i,
+    /click\s+(?:on\s+)?(?:the\s+)?(\S+)\s+(?:button|link|element)/i,
+  ];
+  for (const pattern of clickPatterns) {
+    const match = message.match(pattern);
+    if (match) {
+      steps.push({ id: genStepId(), action: "click", args: { selector: `text=${match[1].trim()}` }, status: "queued" });
+      break;
+    }
+  }
+
+  if (lower.includes("screenshot") || lower.includes("capture")) {
+    steps.push({ id: genStepId(), action: "screenshot", args: {}, status: "queued" });
+  }
+
+  if (steps.length === 0 && lower.match(/zillow|redfin|realtor|trulia|apartments/i)) {
+    const siteMatch = lower.match(/(zillow|redfin|realtor|trulia|apartments)/i);
+    if (siteMatch) {
+      const site = siteMatch[1].toLowerCase();
+      const domain = site === "apartments" ? "apartments.com" : `${site}.com`;
+      steps.push({ id: genStepId(), action: "goto", args: { url: `https://www.${domain}` }, status: "queued" });
+    }
+  }
+
+  if (steps.length === 0) {
+    steps.push({ id: genStepId(), action: "info", args: { message: `Could not parse: "${message}". Try "go to zillow.com"` }, status: "done" });
+  }
+  return steps;
+}
+
+async function executeAgentRun(runId: string, _baseUrl: string) {
+  const run = agentRuns.get(runId);
+  if (!run) return;
+  run.logs.push(`[${new Date().toLocaleTimeString()}] Starting run...`);
+  const internalBase = `http://localhost:${process.env.PORT || 5000}`;
+  try {
+    const openRes = await fetch(`${internalBase}/api/agent/web/open`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "" }),
+    });
+    console.log(`[executeAgentRun] Response status: ${openRes.status}, content-type: ${openRes.headers.get("content-type")}`);
+    const openText = await openRes.text();
+    console.log(`[executeAgentRun] Response text (first 200 chars): ${openText.substring(0, 200)}`);
+    let openData: any;
+    try {
+      openData = JSON.parse(openText);
+    } catch {
+      run.status = "failed";
+      run.logs.push(`[${new Date().toLocaleTimeString()}] Invalid response from web/open (not JSON)`);
+      console.log(`[executeAgentRun] JSON parse failed - response was HTML`);
+      return;
+    }
+    if (!openData.ok) {
+      run.status = "failed";
+      run.logs.push(`[${new Date().toLocaleTimeString()}] Failed to start browser: ${openData.error}`);
+      return;
+    }
+    run.sessionId = openData.sessionId;
+    run.lastScreenshot = openData.screenshotUrl;
+    run.currentUrl = openData.currentUrl || "about:blank";
+    run.logs.push(`[${new Date().toLocaleTimeString()}] Browser started`);
+
+    for (const step of run.steps) {
+      if (run.status === "stopped" || run.status === "failed") break;
+      while (run.status === "paused") {
+        await new Promise(r => setTimeout(r, 500));
+        if ((run as AgentRunState).status === "stopped") break;
+      }
+      if ((run as AgentRunState).status === "stopped") break;
+
+      step.status = "running";
+      run.logs.push(`[${new Date().toLocaleTimeString()}] Executing: ${step.action}`);
+
+      if (step.action === "error" || step.action === "info") {
+        step.status = step.action === "error" ? "failed" : "done";
+        step.result = step.args.message;
+        continue;
+      }
+
+      try {
+        const stepRes = await fetch(`${internalBase}/api/agent/web/step`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: run.sessionId, action: step.action, args: step.args }),
+        });
+        const stepText = await stepRes.text();
+        let stepData: any;
+        try {
+          stepData = JSON.parse(stepText);
+        } catch {
+          step.status = "failed";
+          step.error = "Invalid response (not JSON)";
+          run.logs.push(`[${new Date().toLocaleTimeString()}] Step failed: invalid response format`);
+          continue;
+        }
+        if (!stepData.ok) {
+          step.status = "failed";
+          step.error = stepData.error;
+          run.logs.push(`[${new Date().toLocaleTimeString()}] Step failed: ${stepData.error}`);
+        } else {
+          step.status = "done";
+          step.result = "Completed";
+          run.lastScreenshot = stepData.screenshotUrl;
+          run.currentUrl = stepData.currentUrl || run.currentUrl;
+          run.logs.push(`[${new Date().toLocaleTimeString()}] Step done - ${run.currentUrl}`);
+        }
+      } catch (err: any) {
+        step.status = "failed";
+        step.error = err?.message || "Unknown error";
+        run.logs.push(`[${new Date().toLocaleTimeString()}] Step error: ${err?.message}`);
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (run.status === "running") {
+      run.status = "completed";
+      run.logs.push(`[${new Date().toLocaleTimeString()}] Run completed`);
+    }
+  } catch (err: any) {
+    run.status = "failed";
+    run.logs.push(`[${new Date().toLocaleTimeString()}] Run failed: ${err?.message}`);
+  }
+}
+
 router.post("/agent/execute", async (req, res) => {
   try {
     const body = req.body ?? {};
-    const results: any[] = [];
 
+    // NEW: message-based format for Agent Mode
+    if (body.message && typeof body.message === "string") {
+      console.log("[agent/execute] Message mode:", body.message);
+      const steps = parseMessageToRunSteps(body.message);
+      const runId = genRunId();
+      const run: AgentRunState = {
+        runId, status: "running", steps,
+        currentUrl: "", lastScreenshot: "",
+        logs: [`[${new Date().toLocaleTimeString()}] Parsed ${steps.length} step(s)`],
+        sessionId: null, createdAt: Date.now(),
+      };
+      agentRuns.set(runId, run);
+      const protocol = req.protocol;
+      const host = req.get("host");
+      executeAgentRun(runId, `${protocol}://${host}`);
+      return res.json({ ok: true, runId, steps: steps.map(s => ({ id: s.id, action: s.action, status: s.status })) });
+    }
+
+    // Legacy: action/steps format
+    const results: any[] = [];
     if (body.action) {
       const action = body.action as string;
       const input = body.payload ?? {};
@@ -1321,7 +1544,6 @@ router.post("/agent/execute", async (req, res) => {
       results.push({ action, ...out });
       return res.json({ ok: true, results });
     }
-
     const steps = Array.isArray(body.steps) ? body.steps : [];
     for (const step of steps) {
       const action = step.action as string;
@@ -1334,6 +1556,59 @@ router.post("/agent/execute", async (req, res) => {
     console.error("[agent/execute] error:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+router.get("/agent/runs/:runId", (req, res) => {
+  const { runId } = req.params;
+  const run = agentRuns.get(runId);
+  if (!run) {
+    return res.status(404).json({ ok: false, error: "Run not found" });
+  }
+  res.json({
+    ok: true,
+    run: {
+      runId: run.runId, status: run.status, steps: run.steps,
+      currentUrl: run.currentUrl, lastScreenshot: run.lastScreenshot,
+      logs: run.logs.slice(-50),
+    },
+  });
+});
+
+router.post("/agent/runs/:runId/pause", (req, res) => {
+  const run = agentRuns.get(req.params.runId);
+  if (!run) return res.status(404).json({ ok: false, error: "Run not found" });
+  if (run.status === "running") {
+    run.status = "paused";
+    run.logs.push(`[${new Date().toLocaleTimeString()}] Paused`);
+  }
+  res.json({ ok: true, status: run.status });
+});
+
+router.post("/agent/runs/:runId/resume", (req, res) => {
+  const run = agentRuns.get(req.params.runId);
+  if (!run) return res.status(404).json({ ok: false, error: "Run not found" });
+  if (run.status === "paused") {
+    run.status = "running";
+    run.logs.push(`[${new Date().toLocaleTimeString()}] Resumed`);
+  }
+  res.json({ ok: true, status: run.status });
+});
+
+router.post("/agent/runs/:runId/stop", async (req, res) => {
+  const run = agentRuns.get(req.params.runId);
+  if (!run) return res.status(404).json({ ok: false, error: "Run not found" });
+  run.status = "stopped";
+  run.logs.push(`[${new Date().toLocaleTimeString()}] Stopped`);
+  if (run.sessionId) {
+    try {
+      await fetch(`http://localhost:${process.env.PORT || 5000}/api/agent/web/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: run.sessionId }),
+      });
+    } catch {}
+  }
+  res.json({ ok: true, status: run.status });
 });
 
 /* ===== Property Listing Assistant (helpers embedded to avoid new files) ==== */
