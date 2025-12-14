@@ -93,7 +93,7 @@ export default function DailyBriefPage() {
           ))}
         </div>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6 space-y-6">
           <div className="flex items-center gap-2">
             <button onClick={load} className="px-3 py-1.5 rounded-lg border text-sm hover:bg-gray-50" disabled={loading}>
               {loading ? "Refreshing…" : "Refresh"}

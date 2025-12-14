@@ -19,7 +19,7 @@ export default function DraftsPage() {
           <p className="text-sm text-gray-600">Approve and send tenant/vendor messages.</p>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6">
           {isLoading && <div className="text-gray-500">Loading drafts…</div>}
           {error && <div className="text-red-600">Failed to load drafts.</div>}
           {!isLoading && !error && (!data || data.length === 0) && (

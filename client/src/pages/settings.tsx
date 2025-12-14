@@ -202,7 +202,7 @@ export default function SettingsPage() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto p-4 md:p-6">
+        <main className="flex-1 overflow-auto p-4 md:p-6 pb-20 md:pb-6">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <SectionCard title="PM Profile">
               <PMProfileForm />

@@ -12,8 +12,8 @@ import AgentConsole from "@/pages/AgentConsole";
 import AuditPage from "@/pages/audit";
 import DailyBriefPage from "@/pages/daily-brief";
 
-// Floating button that navigates to /agent
 import AgentLayer from "@/components/agent/AgentLayer";
+import MobileBottomNav from "@/components/MobileBottomNav";
 
 export default function App() {
   return (
@@ -25,7 +25,7 @@ export default function App() {
         <Route path="/drafts" element={<DraftsPage />} />
         <Route path="/vendors" element={<VendorsPage />} />
         <Route path="/properties" element={<PropertiesPage />} />
-        <Route path="/agent" element={<AgentConsole />} />   {/* 👈 ensure before * */}
+        <Route path="/agent" element={<AgentConsole />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/audit" element={<AuditPage />} />
@@ -33,8 +33,13 @@ export default function App() {
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      {/* Global floating Agent button */}
-      <AgentLayer />
+      {/* Desktop: floating Agent button; Mobile: hidden (in bottom nav) */}
+      <div className="hidden md:block">
+        <AgentLayer />
+      </div>
+
+      {/* Mobile bottom navigation bar */}
+      <MobileBottomNav />
     </>
   );
 }

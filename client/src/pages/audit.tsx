@@ -68,7 +68,7 @@ export default function AuditPage() {
       <Toasts items={items} />
       <div className="md:block hidden"><Sidebar /></div>
 
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-6 pb-20 md:pb-6">
         <div className="flex items-end justify-between mb-4 gap-3">
           <div>
             <h1 className="text-2xl font-semibold">Audit Log</h1>
