@@ -291,7 +291,7 @@ export default function RequestsPage() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-hidden pb-20 md:pb-0">
+        <main className="flex-1 overflow-hidden pb-20 md:pb-6">
           <div className="h-full grid grid-cols-1 lg:grid-cols-[420px,1fr]">
             {/* -------- Left list & filters -------- */}
             <div className="border-r bg-white overflow-hidden">
