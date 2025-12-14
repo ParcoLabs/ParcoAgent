@@ -15,8 +15,9 @@ Preferred communication style: Simple, everyday language.
 - **UI Components**: Shadcn/ui component library with Radix UI primitives
 - **Styling**: Tailwind CSS with custom CSS variables and Inter font
 - **State Management**: TanStack React Query for server state and caching
-- **Routing**: Wouter for lightweight client-side routing
+- **Routing**: react-router-dom for client-side routing
 - **Form Handling**: React Hook Form with Zod validation
+- **Mobile Navigation**: Bottom navigation bar (Coinbase-style) with Home, Requests, Agent, Analytics, and More tabs. The "More" button opens a sheet with all navigation items plus user profile. Desktop uses a sidebar navigation.
 
 ### Backend Architecture
 - **Runtime**: Node.js with Express.js for the main API server
