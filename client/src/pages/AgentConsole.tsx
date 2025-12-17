@@ -2,11 +2,12 @@
 import * as React from "react";
 import Sidebar from "@/components/dashboard/sidebar";
 import {
-  Loader2, Bot, User, Paperclip, Settings2, Send,
+  Loader2, Bot, User, Paperclip, Send,
   Building2, ListChecks, Plus, Trash2, X,
   Play, Pause, Square, ExternalLink, CheckCircle2, AlertCircle, Clock
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { useProperties, useRequests } from "@/lib/hooks";
 
 /* ---------------- Types ---------------- */
 type ChatRole = "system" | "user" | "assistant";
@@ -354,6 +355,109 @@ const RunViewerDrawer: React.FC<{
 };
 
 /* ---------------- UI Bits ---------------- */
+/* ---------------- Property/Request Dropdown Chips ---------------- */
+const PropertyDropdown: React.FC<{
+  properties: Array<{ id: string; name: string }>;
+  selectedId?: string;
+  onSelect: (id: string | undefined) => void;
+}> = ({ properties, selectedId, onSelect }) => {
+  const [open, setOpen] = React.useState(false);
+  const selected = properties.find(p => p.id === selectedId);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="px-3 py-1 rounded-full border text-sm mr-2 mb-2 bg-white border-gray-200 hover:bg-gray-50 inline-flex items-center gap-2"
+        data-testid="dropdown-property"
+      >
+        <Building2 size={14} />
+        {selected ? selected.name : "No property"}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-lg border bg-white shadow-lg py-1">
+            <button
+              className="w-full text-left text-sm px-3 py-2 hover:bg-gray-50"
+              onClick={() => { onSelect(undefined); setOpen(false); }}
+            >
+              No property
+            </button>
+            {properties.map(p => (
+              <button
+                key={p.id}
+                className={`w-full text-left text-sm px-3 py-2 hover:bg-gray-50 ${selectedId === p.id ? "bg-emerald-50" : ""}`}
+                onClick={() => { onSelect(p.id); setOpen(false); }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const RequestDropdown: React.FC<{
+  requests: Array<{ id: string; title?: string; summary?: string }>;
+  selectedId?: string;
+  onSelect: (id: string | undefined) => void;
+}> = ({ requests, selectedId, onSelect }) => {
+  const [open, setOpen] = React.useState(false);
+  const selected = requests.find(r => r.id === selectedId);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="px-3 py-1 rounded-full border text-sm mr-2 mb-2 bg-white border-gray-200 hover:bg-gray-50 inline-flex items-center gap-2"
+        data-testid="dropdown-request"
+      >
+        <ListChecks size={14} />
+        {selected ? (selected.title || selected.summary || `Request #${selected.id}`) : "No request"}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full z-20 mt-1 w-64 max-h-64 overflow-auto rounded-lg border bg-white shadow-lg py-1">
+            <button
+              className="w-full text-left text-sm px-3 py-2 hover:bg-gray-50"
+              onClick={() => { onSelect(undefined); setOpen(false); }}
+            >
+              No request
+            </button>
+            {requests.map(r => (
+              <button
+                key={r.id}
+                className={`w-full text-left text-sm px-3 py-2 hover:bg-gray-50 truncate ${selectedId === r.id ? "bg-emerald-50" : ""}`}
+                onClick={() => { onSelect(r.id); setOpen(false); }}
+              >
+                {r.title || r.summary || `Request #${r.id}`}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 const Chip: React.FC<React.PropsWithChildren> = ({ children }) =>
   <div className="px-3 py-1 rounded-full border text-sm mr-2 mb-2 bg-white border-gray-200">{children}</div>;
 
@@ -372,6 +476,60 @@ const MessageBubble: React.FC<{ m: ChatMessage }> = ({ m }) => {
   );
 };
 
+/* ---------------- Plus Menu Popup (mobile) ---------------- */
+const PlusMenuPopup: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  onUploadImage: () => void;
+  agentMode: boolean;
+  onAgentModeChange: (v: boolean) => void;
+}> = ({ open, onClose, onUploadImage, agentMode, onAgentModeChange }) => {
+  if (!open) return null;
+
+  const handleAgentModeToggle = (checked: boolean) => {
+    onAgentModeChange(checked);
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="absolute bottom-full left-0 mb-2 z-50 w-56 rounded-xl border bg-white shadow-lg py-2">
+        <button
+          className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-3"
+          onClick={() => { onUploadImage(); onClose(); }}
+          data-testid="button-upload-image"
+        >
+          <Paperclip size={18} className="text-gray-600" />
+          <span className="text-sm">Upload an image</span>
+        </button>
+        <div
+          className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer"
+          onClick={() => handleAgentModeToggle(!agentMode)}
+        >
+          <div className="flex items-center gap-3">
+            <Play size={18} className={agentMode ? "text-emerald-600" : "text-gray-600"} />
+            <span className="text-sm">Run Agent</span>
+          </div>
+          <Switch
+            checked={agentMode}
+            onCheckedChange={handleAgentModeToggle}
+            data-testid="switch-agent-mode-menu"
+          />
+        </div>
+        <button
+          className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-3 opacity-50"
+          disabled
+          data-testid="button-connectors"
+        >
+          <ExternalLink size={18} className="text-gray-600" />
+          <span className="text-sm">Connectors</span>
+          <span className="text-[10px] text-gray-400 ml-auto">Coming soon</span>
+        </button>
+      </div>
+    </>
+  );
+};
+
 /* ---------------- Input Bar with Agent Mode Toggle ---------------- */
 const InputBar: React.FC<{
   value: string;
@@ -380,51 +538,104 @@ const InputBar: React.FC<{
   disabled?: boolean;
   agentMode: boolean;
   onAgentModeChange: (v: boolean) => void;
-}> = ({ value, onChange, onSend, disabled, agentMode, onAgentModeChange }) => (
-  <div className="p-3 border-t bg-white">
-    <div className="flex items-center gap-2">
-      <button className="p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Attach"><Paperclip size={18} /></button>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-        placeholder={agentMode ? "Tell the agent what to do (e.g., go to zillow.com)" : "Ask or instruct the agent…"}
-        className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-        data-testid="input-chat"
-      />
-      <button className="p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Settings"><Settings2 size={18} /></button>
-      <button
-        onClick={onSend}
-        disabled={disabled}
-        className={`px-3 py-2 rounded-lg text-white flex items-center gap-2 ${disabled ? "bg-emerald-300" : "bg-emerald-600 hover:bg-emerald-700"}`}
-        data-testid="button-send"
-      >
-        <Send size={16} /> Send
-      </button>
-      <div className="flex items-center gap-2 ml-1 pl-2 border-l">
-        <Switch
-          checked={agentMode}
-          onCheckedChange={onAgentModeChange}
-          data-testid="switch-agent-mode"
-        />
-        <span className={`text-sm font-medium ${agentMode ? "text-emerald-700" : "text-gray-500"}`}>
-          Agent Mode
-        </span>
-      </div>
-    </div>
-    {agentMode && (
-      <div className="mt-2 text-xs text-gray-500 bg-emerald-50 rounded px-2 py-1">
-        Agent Mode is ON. Commands will be executed using web automation.
-      </div>
-    )}
-  </div>
-);
+}> = ({ value, onChange, onSend, disabled, agentMode, onAgentModeChange }) => {
+  const [plusMenuOpen, setPlusMenuOpen] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-const ContextBar: React.FC<{ context: AgentContext }> = ({ context }) => (
+  const handleUploadImage = () => {
+    fileInputRef.current?.click();
+  };
+
+  return (
+    <div className="p-3 border-t bg-white">
+      <div className="flex items-center gap-2">
+        {/* Mobile: + button with popup */}
+        <div className="relative md:hidden">
+          <button
+            className="p-2 rounded-full border bg-white text-gray-600 hover:bg-gray-50"
+            onClick={() => setPlusMenuOpen(!plusMenuOpen)}
+            data-testid="button-plus-menu"
+          >
+            <Plus size={18} />
+          </button>
+          <PlusMenuPopup
+            open={plusMenuOpen}
+            onClose={() => setPlusMenuOpen(false)}
+            onUploadImage={handleUploadImage}
+            agentMode={agentMode}
+            onAgentModeChange={onAgentModeChange}
+          />
+        </div>
+
+        {/* Desktop: paperclip button */}
+        <button className="hidden md:block p-2 rounded-md border bg-white text-gray-600 hover:bg-gray-50" title="Attach">
+          <Paperclip size={18} />
+        </button>
+
+        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" />
+
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+          placeholder={agentMode ? "Tell the agent what to do…" : "Ask or instruct the agent…"}
+          className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+          data-testid="input-chat"
+        />
+
+        {/* Send button - larger on mobile */}
+        <button
+          onClick={onSend}
+          disabled={disabled}
+          className={`p-3 md:px-3 md:py-2 rounded-full md:rounded-lg text-white flex items-center justify-center gap-2 ${disabled ? "bg-emerald-300" : "bg-emerald-600 hover:bg-emerald-700"}`}
+          data-testid="button-send"
+        >
+          <Send size={20} className="md:hidden" />
+          <Send size={16} className="hidden md:block" />
+          <span className="hidden md:inline">Send</span>
+        </button>
+
+        {/* Desktop: Agent Mode toggle */}
+        <div className="hidden md:flex items-center gap-2 ml-1 pl-2 border-l">
+          <Switch
+            checked={agentMode}
+            onCheckedChange={onAgentModeChange}
+            data-testid="switch-agent-mode"
+          />
+          <span className={`text-sm font-medium ${agentMode ? "text-emerald-700" : "text-gray-500"}`}>
+            Agent Mode
+          </span>
+        </div>
+      </div>
+      {agentMode && (
+        <div className="mt-2 text-xs text-gray-500 bg-emerald-50 rounded px-2 py-1">
+          Agent Mode is ON. Commands will be executed using web automation.
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ContextBar: React.FC<{
+  properties: Array<{ id: string; name: string }>;
+  requests: Array<{ id: string; title?: string; summary?: string }>;
+  selectedPropertyId?: string;
+  selectedRequestId?: string;
+  onPropertySelect: (id: string | undefined) => void;
+  onRequestSelect: (id: string | undefined) => void;
+}> = ({ properties, requests, selectedPropertyId, selectedRequestId, onPropertySelect, onRequestSelect }) => (
   <div className="px-3 pt-3 pb-2">
     <div className="flex flex-wrap items-center">
-      <Chip><span className="inline-flex items-center gap-2"><Building2 size={14} />{context.propertyName ? `Property: ${context.propertyName}` : context.propertyId ? `Property #${context.propertyId}` : "No property"}</span></Chip>
-      <Chip><span className="inline-flex items-center gap-2"><ListChecks size={14} />{context.requestId ? `Request #${context.requestId}` : "No request"}</span></Chip>
+      <PropertyDropdown
+        properties={properties}
+        selectedId={selectedPropertyId}
+        onSelect={onPropertySelect}
+      />
+      <RequestDropdown
+        requests={requests}
+        selectedId={selectedRequestId}
+        onSelect={onRequestSelect}
+      />
     </div>
   </div>
 );
@@ -473,6 +684,25 @@ export default function AgentConsole() {
     propertyName: search?.get("propertyName") || undefined,
     requestId: search?.get("requestId") || undefined,
   };
+
+  // Fetch properties and requests for dropdowns
+  const { data: propertiesData = [] } = useProperties();
+  const { data: requestsData = [] } = useRequests();
+
+  const properties = (propertiesData as Array<{ id: string; name: string }>).map(p => ({
+    id: String(p.id),
+    name: p.name || `Property #${p.id}`,
+  }));
+
+  const requests = (requestsData as Array<{ id: string | number; title?: string; summary?: string }>).map(r => ({
+    id: String(r.id),
+    title: r.title,
+    summary: r.summary,
+  }));
+
+  // Selected property/request for context
+  const [selectedPropertyId, setSelectedPropertyId] = React.useState<string | undefined>(qCtx.propertyId);
+  const [selectedRequestId, setSelectedRequestId] = React.useState<string | undefined>(qCtx.requestId ? String(qCtx.requestId) : undefined);
 
   const [convos, setConvos] = React.useState<Conversation[]>(() => {
     const data = loadConvos();
@@ -571,7 +801,14 @@ export default function AgentConsole() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
               {/* Chat column */}
               <div className="rounded-2xl border bg-gray-50/60 overflow-hidden">
-                <ContextBar context={chat.context} />
+                <ContextBar
+                  properties={properties}
+                  requests={requests}
+                  selectedPropertyId={selectedPropertyId}
+                  selectedRequestId={selectedRequestId}
+                  onPropertySelect={setSelectedPropertyId}
+                  onRequestSelect={setSelectedRequestId}
+                />
                 <div
                   ref={chat.listRef}
                   className="overflow-y-auto p-3 space-y-3 bg-gradient-to-b from-white to-gray-50

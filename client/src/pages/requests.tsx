@@ -10,7 +10,7 @@ import {
   useProperties,
   useCreateRequest,
 } from "@/lib/hooks";
-import { Wrench, Filter, Search, Plus, Layers3, MessagesSquare } from "lucide-react";
+import { Wrench, Search, Plus, Layers3, MessagesSquare, ArrowLeft, ChevronDown } from "lucide-react";
 
 /* ----------------------- lightweight toast ----------------------- */
 function useToasts() {
@@ -267,6 +267,19 @@ export default function RequestsPage() {
     });
   }
 
+  // Mobile detail view state - controlled by user interaction, not window size
+  const [mobileShowDetail, setMobileShowDetail] = React.useState(false);
+
+  // When user clicks a request on mobile, show detail view
+  const handleSelectRequest = (r: Req) => {
+    setSelected(r);
+    setMobileShowDetail(true);
+  };
+
+  const handleBackToList = () => {
+    setMobileShowDetail(false);
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 md:flex-row flex-col">
       <ToastRack toasts={toasts} />
@@ -276,25 +289,46 @@ export default function RequestsPage() {
 
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header bar */}
-        <header className="bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-4">
+        {/* Header bar - Desktop and mobile list view */}
+        <header className={`bg-white shadow-sm border-b border-gray-200 px-4 md:px-6 py-4 ${mobileShowDetail ? 'hidden md:block' : ''}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-xl md:text-2xl font-semibold text-gray-900">
-                Requests{selected ? <span className="text-gray-500 font-normal"> · {selected.title || selected.summary}</span> : null}
-              </h2>
-              <p className="text-sm text-gray-600">
+              <h2 className="text-xl md:text-2xl font-semibold text-gray-900">Requests</h2>
+              <p className="text-sm text-gray-600 hidden md:block">
                 Today,&nbsp;{new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}
               </p>
             </div>
-            <ToolbarButton label="New Request" icon={<Plus className="h-4 w-4" />} onClick={()=>setOpenNew(true)} variant="primary" />
+            {/* New Request button - hidden on mobile, shown on desktop */}
+            <div className="hidden md:block">
+              <ToolbarButton label="New Request" icon={<Plus className="h-4 w-4" />} onClick={()=>setOpenNew(true)} variant="primary" />
+            </div>
           </div>
         </header>
+
+        {/* Mobile detail header with back arrow */}
+        {mobileShowDetail && selected && (
+          <header className="md:hidden bg-white shadow-sm border-b border-gray-200 px-4 py-4">
+            <button
+              onClick={handleBackToList}
+              className="flex items-center gap-2 text-gray-600 mb-2"
+              data-testid="button-back-to-list"
+            >
+              <ArrowLeft size={20} />
+              <span className="text-sm">Back to requests</span>
+            </button>
+            <h2 className="text-lg font-semibold text-gray-900 line-clamp-2">
+              {selected.title || selected.summary || "Request details"}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Created {new Date(selected.createdAt || Date.now()).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+            </p>
+          </header>
+        )}
 
         <main className="flex-1 overflow-hidden pb-20 md:pb-6">
           <div className="h-full grid grid-cols-1 lg:grid-cols-[420px,1fr]">
             {/* -------- Left list & filters -------- */}
-            <div className="border-r bg-white overflow-hidden">
+            <div className={`border-r bg-white overflow-hidden ${mobileShowDetail ? 'hidden md:block' : ''}`}>
               <div className="p-3 border-b bg-white">
                 <div className="flex gap-2 items-center">
                   <div className="relative flex-1">
@@ -302,7 +336,6 @@ export default function RequestsPage() {
                            placeholder="Search requests, tenants, properties…" value={q} onChange={(e)=>setQ(e.target.value)} />
                     <Search className="h-4 w-4 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
                   </div>
-                  <Filter className="h-4 w-4 text-gray-500" title="Filters" />
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   <select className="rounded-lg border px-2 py-2 text-sm" value={status} onChange={(e)=>setStatus(e.target.value)}>
@@ -315,6 +348,16 @@ export default function RequestsPage() {
                     <option value="all">All properties</option>
                     {properties.map((p:any)=> (<option key={p.id} value={p.id}>{p.name}</option>))}
                   </select>
+                </div>
+                {/* Mobile: New Request button below filters */}
+                <div className="mt-3 md:hidden">
+                  <button
+                    onClick={()=>setOpenNew(true)}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-blue-700 text-white px-3 py-2 text-sm hover:bg-blue-800"
+                    data-testid="button-new-request-mobile"
+                  >
+                    <Plus className="h-4 w-4" /> New Request
+                  </button>
                 </div>
               </div>
 
@@ -335,7 +378,7 @@ export default function RequestsPage() {
                       return (
                         <li key={r.id}
                             className={`rounded-lg border p-3 hover:shadow-sm cursor-pointer transition ${active ? "border-gray-900 ring-1 ring-gray-900/10" : "bg-white"}`}
-                            onClick={()=>setSelected(r)}>
+                            onClick={()=>handleSelectRequest(r)}>
                           <div className="flex items-start justify-between">
                             <div className="pr-3">
                               <div className="flex items-center gap-2">
@@ -365,11 +408,11 @@ export default function RequestsPage() {
             </div>
 
             {/* -------- Right: details, then AI Agent Drafts card -------- */}
-            <div className="overflow-auto p-4 md:p-6">
+            <div className={`overflow-auto p-4 md:p-6 ${!mobileShowDetail ? 'hidden md:block' : ''}`}>
               {selected ? (
                 <div className="space-y-4">
-                  {/* Top description card */}
-                  <div className="rounded-xl border bg-white p-4">
+                  {/* Top description card - hidden on mobile since we show it in header */}
+                  <div className="hidden md:block rounded-xl border bg-white p-4">
                     <div className="text-lg font-semibold mb-1">{selected.title || selected.summary || "Request details"}</div>
                     <div className="text-xs text-gray-500 mb-3">Created {new Date(selected.createdAt || Date.now()).toLocaleString()}</div>
                     <div className="flex flex-wrap gap-2 mb-3">
@@ -384,24 +427,38 @@ export default function RequestsPage() {
                     </div>
                   </div>
 
-                  {/* AI Agent Drafts card */}
+                  {/* Mobile: compact info card */}
+                  <div className="md:hidden rounded-xl border bg-white p-4">
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {selected.priority ? <PriorityPill priority={selected.priority}/> : null}
+                      <StatusPill status={selected.status}/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div><div className="text-gray-500">Tenant</div><div>{selected.tenantName || "—"}</div></div>
+                      <div><div className="text-gray-500">Category / Unit</div>
+                        <div>{selected.category || "Other"} • {typeof selected.property==="string" ? selected.property : selected.property?.name || "—"}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Respond with AI Agent card (renamed from AI Agent Drafts) */}
                   <div className="rounded-xl border bg-white">
-                    <div className="flex items-center justify-between px-4 py-3 border-b">
-                      <div className="text-base font-semibold">AI Agent Drafts</div>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between px-4 py-3 border-b gap-3">
+                      <div className="text-base font-semibold">Respond with AI Agent</div>
                       <div className="flex items-center gap-2">
-                        <select className="rounded-lg border px-2 py-1 text-sm" value={mode} onChange={(e)=>setMode(e.target.value as AgentMode)}>
+                        <select className="rounded-lg border px-2 py-1 text-sm flex-1 md:flex-none" value={mode} onChange={(e)=>setMode(e.target.value as AgentMode)}>
                           <option value="both">Both</option>
                           <option value="tenant_update">Tenant Notice</option>
                           <option value="source_quotes">Source 3 Quotes</option>
                         </select>
-                        <ToolbarButton
-                          label={runAgent.isPending ? "Running…" : "Run Agent"}
-                          icon={<MessagesSquare className="h-4 w-4" />}
-                          variant="primary"
+                        <button
                           onClick={runAgentNow}
                           disabled={!canRun}
-                          title="Generate drafts/notices for this request"
-                        />
+                          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap"
+                          data-testid="button-run-agent"
+                        >
+                          {runAgent.isPending ? "Running…" : "Run Agent"}
+                        </button>
                       </div>
                     </div>
                     <div className="p-4" key={draftsRefreshKey}>
@@ -410,18 +467,49 @@ export default function RequestsPage() {
                     </div>
                   </div>
 
-                  {/* Quotes quick action */}
+                  {/* Quotes section */}
                   <div className="rounded-xl border bg-white p-4">
                     <div className="flex items-center justify-between">
-                      <div className="text-xl font-semibold">Quotes</div>
-                      <ToolbarButton
-                        label={runAgent.isPending ? "Sourcing…" : "Source 3 Quotes"}
-                        icon={<Layers3 className="h-4 w-4" />}
+                      <div className="text-base font-semibold">Quotes</div>
+                      <button
                         onClick={()=>runSourceQuotes()}
                         disabled={!canRun}
-                        title="Ask the agent to source quotes"
-                      />
+                        className="flex items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60"
+                        data-testid="button-source-quotes"
+                      >
+                        <Layers3 className="h-4 w-4" />
+                        {runAgent.isPending ? "Sourcing…" : "Source 3 Quotes"}
+                      </button>
                     </div>
+                  </div>
+
+                  {/* Assign Vendor section */}
+                  <div className="rounded-xl border bg-white p-4">
+                    <div className="text-base font-semibold mb-3">Assign Vendor</div>
+                    <select
+                      className="w-full rounded-lg border px-3 py-2 text-sm mb-3"
+                      defaultValue=""
+                      data-testid="select-vendor"
+                    >
+                      <option value="" disabled>Select vendor...</option>
+                      {vendors.map((v: any) => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        const select = document.querySelector('[data-testid="select-vendor"]') as HTMLSelectElement;
+                        if (select?.value) {
+                          assignVendor.mutate({ requestId: selected.id, vendorId: select.value });
+                        }
+                      }}
+                      disabled={assignVendor.isPending}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                      data-testid="button-assign-vendor"
+                    >
+                      {assignVendor.isPending ? "Assigning…" : "Assign"}
+                    </button>
+                    <p className="text-xs text-gray-500 mt-2">Optional note for the activity log (visible in</p>
                   </div>
                 </div>
               ) : (
