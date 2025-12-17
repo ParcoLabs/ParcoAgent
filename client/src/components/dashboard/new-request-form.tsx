@@ -138,7 +138,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
               )}
             />
             
-            <div className="flex items-center justify-between">
+            <div className="space-y-4">
               <div className="flex items-center space-x-4">
                 <FormField
                   control={form.control}
@@ -149,6 +149,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
                         <Checkbox 
                           checked={field.value}
                           onCheckedChange={field.onChange}
+                          data-testid="checkbox-tenant-reported"
                         />
                       </FormControl>
                       <FormLabel className="text-sm text-gray-600">Tenant reported</FormLabel>
@@ -164,6 +165,7 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
                         <Checkbox 
                           checked={field.value}
                           onCheckedChange={field.onChange}
+                          data-testid="checkbox-emergency"
                         />
                       </FormControl>
                       <FormLabel className="text-sm text-gray-600">Emergency</FormLabel>
@@ -174,10 +176,11 @@ export default function NewRequestForm({ onSuggestion }: NewRequestFormProps) {
               <Button 
                 type="submit" 
                 disabled={isLoading}
-                className="bg-green-700 text-white hover:bg-green-800 transition-colors flex items-center space-x-2"
+                className="w-full bg-green-700 text-white hover:bg-green-800 transition-colors flex items-center justify-center space-x-2"
+                data-testid="button-submit-property-issue"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>{isLoading ? "Analyzing..." : "Get AI Suggestion"}</span>
+                <span>{isLoading ? "Analyzing..." : "Submit Property Issue"}</span>
               </Button>
             </div>
           </form>

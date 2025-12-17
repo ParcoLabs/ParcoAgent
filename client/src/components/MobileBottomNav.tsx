@@ -4,36 +4,28 @@ import {
   ClipboardList,
   Home,
   Bot,
-  Menu,
+  MoreHorizontal,
+  Building2,
+  ScrollText,
+  Newspaper,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import {
-  Users,
-  ScrollText,
-  Settings as SettingsIcon,
-  User,
-} from "lucide-react";
 
 const mainNavItems = [
   { name: "Home", href: "/dashboard", icon: Home },
   { name: "Requests", href: "/requests", icon: ClipboardList },
   { name: "Agent", href: "/agent", icon: Bot },
-  { name: "Analytics", href: "/analytics", icon: BarChart3 },
-  { name: "More", href: "#more", icon: Menu },
+  { name: "Properties", href: "/properties", icon: Building2 },
+  { name: "More", href: "#more", icon: MoreHorizontal },
 ];
 
 const moreNavItems = [
-  { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
-  { name: "Requests", href: "/requests", icon: ClipboardList },
-  { name: "Vendors", href: "/vendors", icon: Users },
-  { name: "Properties", href: "/properties", icon: Home },
-  { name: "Agent", href: "/agent", icon: Bot },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Audit", href: "/audit", icon: ScrollText },
-  { name: "Daily Brief", href: "/daily-brief", icon: Home },
-  { name: "Settings", href: "/settings", icon: SettingsIcon },
+  { name: "Daily Brief", href: "/daily-brief", icon: Newspaper },
 ];
 
 export default function MobileBottomNav() {
@@ -92,7 +84,7 @@ export default function MobileBottomNav() {
           <SheetHeader className="pb-4">
             <SheetTitle>Menu</SheetTitle>
           </SheetHeader>
-          <div className="grid grid-cols-3 gap-4 pb-8">
+          <div className="grid grid-cols-3 gap-4 pb-6">
             {moreNavItems.map((item) => {
               const isActive = location.pathname === item.href;
               return (
